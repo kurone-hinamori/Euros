@@ -1,0 +1,147 @@
+import { fetch } from "@tauri-apps/plugin-http";
+import type { Settings } from "../types";
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface ChatOptions {
+  messages: ChatMessage[];
+  /** "json" または JSON Schema を渡すと構造化出力になる */
+  format?: "json" | Record<string, unknown>;
+  temperature?: number;
+  numPredict?: number;
+  signal?: AbortSignal;
+  onToken?: (accumulated: string) => void;
+}
+
+const base = (s: Pick<Settings, "ollamaUrl">) => s.ollamaUrl.replace(/\/+$/, "");
+
+/**
+ * Ollama は Origin ヘッダーを検査し、許可リストにないオリジン(アプリの tauri.localhost)を 403 で拒否する。
+ * Ollama 自身のオリジンを名乗ることで、環境変数 OLLAMA_ORIGINS の設定なしで接続できるようにする。
+ */
+function originHeader(s: Pick<Settings, "ollamaUrl">): Record<string, string> {
+  try {
+    return { Origin: new URL(base(s)).origin };
+  } catch {
+    return {};
+  }
+}
+
+export async function listModels(s: Pick<Settings, "ollamaUrl">): Promise<string[]> {
+  const res = await fetch(`${base(s)}/api/tags`, { headers: originHeader(s) });
+  if (!res.ok) throw new Error(`Ollama に接続できません (HTTP ${res.status})`);
+  const data = (await res.json()) as { models?: { name: string }[] };
+  return (data.models ?? []).map((m) => m.name);
+}
+
+/**
+ * 読み込んでいるモデルを GPU から外す(外し終わるまで最大15秒待つ)。
+ * ComfyUI と同じ GPU に小説用のモデルが載ったまま画像を作ると、ComfyUI が GPU のエラーで止まることがあったため。
+ */
+export async function unloadModel(s: Pick<Settings, "ollamaUrl" | "model">): Promise<void> {
+  if (!s.model) return;
+  const headers = { "Content-Type": "application/json", ...originHeader(s) };
+  try {
+    const ps = await fetch(`${base(s)}/api/ps`, { headers: originHeader(s) });
+    const loaded = ((await ps.json()) as { models?: { name: string }[] }).models ?? [];
+    if (!loaded.length) return;
+    for (const m of loaded) await fetch(`${base(s)}/api/generate`, { method: "POST", headers, body: JSON.stringify({ model: m.name, keep_alive: 0 }) });
+    for (let i = 0; i < 30; i++) {
+      const r = await fetch(`${base(s)}/api/ps`, { headers: originHeader(s) });
+      if (!((await r.json()) as { models?: unknown[] }).models?.length) return;
+      await new Promise((ok) => setTimeout(ok, 500));
+    }
+  } catch {
+    // Ollama が動いていなければ、外すものもない
+  }
+}
+
+function stripThinking(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/^[\s\S]*<\/think>/, "");
+}
+
+/** Ollama の /api/chat をストリーミングで呼び出し、全文を返す。 */
+export async function chat(s: Settings, opts: ChatOptions): Promise<string> {
+  if (!s.model) throw new Error("モデルが選択されていません。設定画面でモデルを選んでください。");
+  const res = await fetch(`${base(s)}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...originHeader(s) },
+    signal: opts.signal,
+    body: JSON.stringify({
+      model: s.model,
+      messages: opts.messages,
+      stream: true,
+      think: false,
+      format: opts.format,
+      options: {
+        temperature: opts.temperature ?? s.temperature,
+        num_ctx: s.numCtx,
+        num_predict: opts.numPredict ?? -1,
+        repeat_penalty: 1.08,
+      },
+    }),
+  });
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Ollama エラー (HTTP ${res.status}) ${detail}`.trim());
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  const handleLine = (line: string) => {
+    if (!line.trim()) return;
+    const obj = JSON.parse(line) as { message?: { content?: string }; error?: string };
+    if (obj.error) throw new Error(obj.error);
+    if (obj.message?.content) {
+      text += obj.message.content;
+      opts.onToken?.(stripThinking(text));
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      handleLine(buffer.slice(0, nl));
+      buffer = buffer.slice(nl + 1);
+    }
+  }
+  handleLine(buffer);
+  return stripThinking(text).trim();
+}
+
+function parseJson<T>(text: string): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1)) as T;
+    throw new Error("JSON を解釈できませんでした");
+  }
+}
+
+/** 構造化出力。解釈に失敗した場合は最大 retries 回やり直す。 */
+export async function chatJson<T>(
+  s: Settings,
+  opts: Omit<ChatOptions, "format"> & { schema: Record<string, unknown>; retries?: number },
+): Promise<T> {
+  const { schema, retries = 3, ...rest } = opts;
+  let lastError: unknown;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const text = await chat(s, { ...rest, format: schema, numPredict: rest.numPredict ?? 8192 });
+      return parseJson<T>(text);
+    } catch (e) {
+      if (opts.signal?.aborted) throw e;
+      lastError = e;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}

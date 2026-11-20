@@ -1,0 +1,49 @@
+name: Bump version
+
+# Actions の画面から実行すると、バージョンを上げてコミットとタグを push し、そのままリリースする。
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "patch / minor / major、または x.y.z"
+        required: true
+        default: patch
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          version=$(node scripts/bump.mjs "$BUMP")
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+      - name: Cargo.lock のバージョンもそろえる
+        run: sed -i "/^name = \"euros\"$/{n;s/^version = \".*\"/version = \"${TAG#v}\"/}" src-tauri/Cargo.lock
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+      - env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "release: $TAG"
+          git tag "$TAG"
+          git push origin HEAD "$TAG"
+
+  release:
+    needs: bump
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.bump.outputs.tag }}
+    secrets: inherit
