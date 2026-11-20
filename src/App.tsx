@@ -6,9 +6,18 @@ import { loadSettings, saveSettings } from "./lib/storage";
 import { CharacterList } from "./components/CharacterList";
 import { SettingsView } from "./components/SettingsView";
 import { UpdateBanner } from "./components/UpdateBanner";
-import { Placeholder } from "./components/Placeholder";
+import { NewCharacter } from "./components/NewCharacter";
+import { CharacterDetail } from "./components/CharacterDetail";
+import { EditCharacter } from "./components/EditCharacter";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { confirmLeave } from "./lib/leaveGuard";
 
-export type View = { kind: "list" } | { kind: "new" } | { kind: "detail"; id: string } | { kind: "settings" };
+export type View =
+  | { kind: "list" }
+  | { kind: "new" }
+  | { kind: "detail"; id: string }
+  | { kind: "edit"; id: string }
+  | { kind: "settings" };
 
 export default function App() {
   const [view, setView] = useState<View>({ kind: "list" });
@@ -21,7 +30,9 @@ export default function App() {
       setSettings(s);
       setReady(true);
     });
-    getVersion().then(setVersion).catch(() => undefined);
+    getVersion()
+      .then(setVersion)
+      .catch(() => undefined);
   }, []);
 
   const changeSettings = (s: Settings) => {
@@ -29,8 +40,16 @@ export default function App() {
     void saveSettings(s).catch(() => undefined);
   };
 
+  /** 生成中などは確かめてから移る */
+  const go = (target: View) => {
+    void confirmLeave().then((ok) => ok && setView(target));
+  };
+
   const nav = (label: string, target: View, active: boolean) => (
-    <button className={`nav${active ? " active" : ""}`} onClick={() => setView(target)}>
+    <button
+      className={`nav${active ? " active" : ""}`}
+      onClick={() => go(target)}
+    >
       {label}
     </button>
   );
@@ -39,7 +58,13 @@ export default function App() {
     <div className="app">
       <aside className="side">
         <div className="brand">EUROS</div>
-        {nav("キャラクター", { kind: "list" }, view.kind === "list" || view.kind === "detail")}
+        {nav(
+          "キャラクター",
+          { kind: "list" },
+          view.kind === "list" ||
+            view.kind === "detail" ||
+            view.kind === "edit",
+        )}
         {nav("新規作成", { kind: "new" }, view.kind === "new")}
         <div className="spacer" />
         {nav("設定", { kind: "settings" }, view.kind === "settings")}
@@ -48,15 +73,42 @@ export default function App() {
       <main className="main">
         <UpdateBanner />
         <div className="content">
-          {!ready ? null : view.kind === "list" ? (
-            <CharacterList settings={settings} onOpen={(id) => setView({ kind: "detail", id })} onNew={() => setView({ kind: "new" })} />
-          ) : view.kind === "new" ? (
-            <Placeholder title="新規作成" text="日本語の説明と参照画像からキャラクターシートを作る画面です(手順3で作ります)。" />
-          ) : view.kind === "detail" ? (
-            <Placeholder title="詳細" text="シート、プロフィール、プロンプト、変更の履歴を見る画面です(手順4で作ります)。" onBack={() => setView({ kind: "list" })} />
-          ) : (
-            <SettingsView settings={settings} onChange={changeSettings} />
-          )}
+          <ErrorBoundary
+            key={
+              view.kind === "detail" || view.kind === "edit"
+                ? `${view.kind}:${view.id}`
+                : view.kind
+            }
+            onBack={() => setView({ kind: "list" })}
+          >
+            {!ready ? null : view.kind === "list" ? (
+              <CharacterList
+                settings={settings}
+                onOpen={(id) => setView({ kind: "detail", id })}
+                onNew={() => setView({ kind: "new" })}
+              />
+            ) : view.kind === "new" ? (
+              <NewCharacter
+                settings={settings}
+                onCreated={(id) => setView({ kind: "detail", id })}
+              />
+            ) : view.kind === "detail" ? (
+              <CharacterDetail
+                id={view.id}
+                onBack={() => setView({ kind: "list" })}
+                onEdit={(id) => setView({ kind: "edit", id })}
+              />
+            ) : view.kind === "edit" ? (
+              <EditCharacter
+                id={view.id}
+                settings={settings}
+                onDone={(id) => setView({ kind: "detail", id })}
+                onCancel={() => go({ kind: "detail", id: view.id })}
+              />
+            ) : (
+              <SettingsView settings={settings} onChange={changeSettings} />
+            )}
+          </ErrorBoundary>
         </div>
       </main>
     </div>

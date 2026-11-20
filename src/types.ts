@@ -53,9 +53,8 @@ export interface ReferenceImage {
   addedAt: string;
 }
 
+/** 画像生成のモデル。中身は lib/comfy/engines.ts の ENGINES に登録する */
 export type ImageEngine = "moss" | "minimax_h3";
-
-export const ENGINE_LABEL: Record<ImageEngine, string> = { moss: "MOSS-Image", minimax_h3: "MiniMax-H3-Image" };
 
 /** 0〜1000 の [上, 左, 下, 右] */
 export type Box1000 = [number, number, number, number];
@@ -117,9 +116,24 @@ export interface Character {
   /** いまの外見(採用中の版の外見から、さらに直したもの) */
   appearance: Appearance;
   references: ReferenceImage[];
+  sheet: SheetOptions;
   revisions: Revision[];
   /** 採用中の版 */
   currentRevision?: string;
+}
+
+/** 表情の1つ(ja は画面に出す名前、en は生成に使う説明) */
+export interface Expression {
+  ja: string;
+  en: string;
+}
+
+/** シートの作り方 */
+export interface SheetOptions {
+  /** 表情一覧に並べる表情 */
+  expressions: Expression[];
+  /** 人ではない(ロボット・動物・物など)。人の姿にされないようにする */
+  notHuman: boolean;
 }
 
 /** 一覧に出す分(Rust の summarize と同じ形) */

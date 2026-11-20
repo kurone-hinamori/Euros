@@ -13,7 +13,15 @@ export const saveFile = (id: string, file: string, bytes: Uint8Array) => invoke<
 export const loadFile = async (id: string, file: string) => new Uint8Array(await invoke<ArrayBuffer>("load_file", { id, file }));
 export const deleteFile = (id: string, file: string) => invoke<void>("delete_file", { id, file });
 
-export const libraryInfo = () => invoke<{ path: string; defaultPath: string }>("library_info");
+/** キャラクターを .euros(zip)に書き出す */
+export const exportCharacter = (id: string, path: string) => invoke<void>("export_character", { id, path });
+
+export type ImportResult = { status: "imported" | "exists"; id: string; name: string | null };
+/** .euros を読み込む。同じ id があると mode なしでは "exists" を返す */
+export const importCharacter = (path: string, mode?: "replace" | "copy", newId?: string) =>
+  invoke<ImportResult>("import_character", { path, mode: mode ?? null, newId: newId ?? null });
+
+export const libraryInfo =() => invoke<{ path: string; defaultPath: string }>("library_info");
 export const openLibrary = () => invoke<void>("open_library");
 
 export function newId(): string {

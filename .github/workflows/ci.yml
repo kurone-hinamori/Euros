@@ -22,4 +22,4 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npm run build
-      - run: cargo check --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib

@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
 import { check } from "@tauri-apps/plugin-updater";
-import type { ImageEngine, Settings } from "../types";
-import { ENGINE_LABEL } from "../types";
+import type { Settings } from "../types";
 import { comfyStats } from "../lib/comfy";
+import { ImageModelSettings } from "./ImageModelSettings";
+import { ComfyTest } from "./ComfyTest";
 import { listModels } from "../lib/ollama";
 import { libraryInfo, openLibrary, saveSettings } from "../lib/storage";
 import { installUpdate } from "../lib/updater";
@@ -113,16 +114,12 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
           <button onClick={() => void checkComfy()}>接続確認</button>
           {statusLine(comfy)}
         </div>
-        <label className="field">
-          <span>画像生成のモデル</span>
-          <select value={settings.imageEngine} onChange={(e) => onChange({ ...settings, imageEngine: e.target.value as ImageEngine })}>
-            {(Object.keys(ENGINE_LABEL) as ImageEngine[]).map((k) => (
-              <option key={k} value={k}>
-                {ENGINE_LABEL[k]}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ImageModelSettings settings={settings} onChange={onChange} />
+      </section>
+
+      <section className="card">
+        <h3>生成の確認</h3>
+        <ComfyTest settings={settings} />
       </section>
 
       <section className="card">
