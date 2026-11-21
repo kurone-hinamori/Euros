@@ -54,6 +54,36 @@ const VIEWS: { box: Box1000; en: string }[] = [
 const EXPRESSION_AREA: Box1000 = [30, 615, 540, 990];
 const DETAIL_AREA: Box1000 = [570, 615, 970, 990];
 
+/**
+ * 衣装・小物の区画に描くもの。
+ * 「衣装の部分の拡大図」とまとめて頼むと、服を切り取った布の断片のような絵になりやすかったので、
+ * 人が着ていない衣装の全体と、単体の小物に分けて頼む
+ */
+function detailParts(a: Appearance, notHuman: boolean): { box: Box1000; caption: string; summary: string }[] {
+  const outfit = trimDot(a.outfit.en);
+  const acc = trimDot(a.accessories.en);
+  const [y0, x0, y1, x1] = DETAIL_AREA;
+  const split = Math.round(x0 + (x1 - x0) * 0.58);
+  const outfitPart = {
+    caption: notHuman
+      ? `The character's worn items on their own, without the character, each drawn whole and uncropped: ${outfit}.`
+      : `The complete outfit on its own, laid out flat with no person wearing it, every garment drawn whole and uncropped: ${outfit}.`,
+    summary: `the complete outfit laid out flat without a person (${outfit})`,
+  };
+  const accPart = {
+    caption: `The accessories drawn as whole standalone objects, uncropped, nobody holding them: ${acc}.`,
+    summary: `the accessories as whole standalone objects (${acc})`,
+  };
+  if (outfit && acc)
+    return [
+      { box: [y0, x0, y1, split - 5], ...outfitPart },
+      { box: [y0, split + 5, y1, x1], ...accPart },
+    ];
+  if (outfit) return [{ box: DETAIL_AREA, ...outfitPart }];
+  if (acc) return [{ box: DETAIL_AREA, ...accPart }];
+  return [];
+}
+
 /** 範囲を選ぶときの区画 */
 export const SHEET_REGIONS: { label: string; box: Box1000 }[] = [
   { label: "正面", box: [0, 0, 1000, 202] },
@@ -132,7 +162,7 @@ function mossEditPrompt(input: SheetInput): string {
   const layout = [
     "the three full-body views on the left (front, side, back)",
     exps.length ? `the grid of ${exps.length} face close-ups at the top right with their different expressions (${exps.join(", ")})` : "",
-    "the close-up detail drawings of the outfit parts and accessories at the bottom right",
+    "the outfit and accessories drawn on their own without the character at the bottom right",
   ].filter(Boolean);
   const name = (i: number) => `Reference image ${i + 1}`;
   return [
@@ -154,12 +184,12 @@ export function sheetPrompt(input: SheetInput, engine: EngineDef): string {
   const { appearance: a, sheet } = input;
   const exps = sheet.expressions.filter((e) => e.en.trim());
   const who = sheet.notHuman ? "one and the same non-human character (not a human, draw it exactly as described, no people, no hands holding it)" : "one and the same character";
-  const details = [a.outfit.en, a.accessories.en].map(trimDot).filter(Boolean).join("; ");
+  const parts = detailParts(a, sheet.notHuman);
   const frame = [
     `Character design reference sheet on a plain white background, showing ${who}.`,
     `Left half: three full-body standing poses side by side at the same scale and height — front view, side view facing right, back view.`,
     exps.length ? `Top right: a grid of ${exps.length} head-and-shoulders close-ups of the same face with different expressions: ${exps.map((e) => trimDot(e.en)).join(", ")}.` : "",
-    `Bottom right: close-up detail drawings of the outfit parts and accessories${details ? ` (${details})` : ""}.`,
+    parts.length ? `Bottom right, without the character: ${parts.map((p) => p.summary).join(", and ")}.` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -183,7 +213,7 @@ export function sheetPrompt(input: SheetInput, engine: EngineDef): string {
   const items = [
     ...VIEWS.map((v) => item(v.box, `The character, ${v.en}.`)),
     ...expressionBoxes(exps.length).map((box, i) => item(box, `Head-and-shoulders close-up of the same character, ${trimDot(exps[i].en)} expression.`)),
-    item(DETAIL_AREA, `Close-up detail drawings of the outfit parts and accessories${details ? `: ${details}` : ""}. No people.`, "object"),
+    ...parts.map((p) => item(p.box, `${p.caption} No people.`, "object")),
   ];
   return JSON.stringify({ summary: { caption: summary }, items, bbox_coord_space: "abs_centralized", bbox_format: "yxyx" });
 }
