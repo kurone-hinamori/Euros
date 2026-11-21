@@ -5,7 +5,7 @@ import { type Candidate, type PendingReference, addRevision, randomSeed, storeRe
 import { engineOf } from "../lib/comfy";
 import { outfitReference, wearOutfit, wearSummaryEn } from "../lib/outfits";
 import { applyInstruction, translateFields } from "../lib/prompts";
-import { sheetNegative, sheetPrompt } from "../lib/sheet";
+import { expressionChanges, sheetNegative, sheetPrompt } from "../lib/sheet";
 import { loadCharacter, loadFile, saveCharacter } from "../lib/storage";
 import { useFileUrl } from "../lib/useFileUrl";
 import { useImageJob } from "../lib/useImageJob";
@@ -237,9 +237,7 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
       ...changedFromBase.filter((k) => !applied.some((x) => k in x.after)).map((k) => `${k}: ${a[k].en}`),
       // 画風と表情を変えたときも伝える(MOSS-Image で直すときは、変える所しか伝えないため)
       ...(style.trim() !== ch.style.trim() ? [`art style: ${style}`] : []),
-      ...(JSON.stringify(sheet.expressions) !== JSON.stringify(ch.sheet.expressions)
-        ? [`expressions in the face grid: ${sheet.expressions.map((e) => e.en.trim()).filter(Boolean).join(", ")}`]
-        : []),
+      ...expressionChanges(ch.sheet.expressions.filter((e) => e.en.trim()), sheet.expressions.filter((e) => e.en.trim())),
     ];
     let used: Method = method;
     let prompt = "";

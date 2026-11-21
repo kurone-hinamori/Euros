@@ -93,9 +93,49 @@ export const SHEET_REGIONS: { label: string; box: Box1000 }[] = [
   { label: "衣装・小物", box: [555, 600, 1000, 1000] },
 ];
 
+/** 表情の区画の列の数(3列に並べる) */
+const gridCols = (n: number) => Math.min(3, Math.max(1, n));
+
+/** 表情の区画の場所の英語(「top row, left」など)。並べ方は expressionBoxes と同じ */
+function gridPlace(i: number, n: number): string {
+  const cols = gridCols(n);
+  const rows = Math.ceil(n / cols);
+  const r = Math.floor(i / cols);
+  const c = i % cols;
+  const row = rows === 1 ? "" : rows === 2 ? ["top row", "bottom row"][r] : r === 0 ? "top row" : r === rows - 1 ? "bottom row" : rows === 3 ? "middle row" : `row ${r + 1}`;
+  const col = cols === 1 ? "" : cols === 2 ? ["left", "right"][c] : ["left", "middle", "right"][c];
+  return [row, col].filter(Boolean).join(", ");
+}
+
+/**
+ * 表情の並び。並べた語だけを伝えると、どの顔がどの表情か分からず、隣の表情と混ざった。
+ * 段ごとに、左から順に書く
+ */
+function expressionLayout(exps: string[]): string {
+  const cols = gridCols(exps.length);
+  const rows = Math.ceil(exps.length / cols);
+  if (rows === 1) return `from left to right: ${exps.join("; ")}`;
+  return Array.from({ length: rows }, (_, r) => {
+    const name = gridPlace(r * cols, exps.length).split(",")[0];
+    return `${name} from left to right: ${exps.slice(r * cols, (r + 1) * cols).join("; ")}`;
+  }).join(". ");
+}
+
+/** 編集で表情を変えたときに伝える英語(変わった顔の場所と、前後の表情) */
+export function expressionChanges(before: Expression[], after: Expression[]): string[] {
+  const b = before.map((e) => trimDot(e.en));
+  const a = after.map((e) => trimDot(e.en));
+  if (JSON.stringify(a) === JSON.stringify(b)) return [];
+  // 数が変わったら、並び全体を伝える
+  if (a.length !== b.length) return [`the face grid now has ${a.length} close-ups, ${expressionLayout(a)}`];
+  return a.flatMap((e, i) =>
+    e === b[i] ? [] : [`the face close-up in the ${gridPlace(i, a.length)} of the face grid: change its expression from "${b[i]}" to "${e}", and keep the other faces as they are`],
+  );
+}
+
 /** 表情の区画を3列に並べる */
 function expressionBoxes(n: number): Box1000[] {
-  const cols = Math.min(3, Math.max(1, n));
+  const cols = gridCols(n);
   const rows = Math.ceil(n / cols);
   const [y0, x0, y1, x1] = EXPRESSION_AREA;
   const w = (x1 - x0) / cols;
@@ -161,12 +201,13 @@ function mossEditPrompt(input: SheetInput): string {
   // 区画を伝えないと、表情がそろったり、衣装・小物の区画が全身の絵に置き換わったりした
   const layout = [
     "the three full-body views on the left (front, side, back)",
-    exps.length ? `the grid of ${exps.length} face close-ups at the top right with their different expressions (${exps.join(", ")})` : "",
+    exps.length ? `the grid of ${exps.length} face close-ups at the top right, each with its own expression (${expressionLayout(exps)})` : "",
     "the outfit and accessories drawn on their own without the character at the bottom right",
   ].filter(Boolean);
   const name = (i: number) => `Reference image ${i + 1}`;
   return [
-    n ? `${name(0)} is the current character design sheet.` : "",
+    // 1枚目はいつもいまのシート(ほかの参照画像がなくても伝える)
+    `${name(0)} is the current character design sheet.`,
     changes.length
       ? `Change only the following on this character design sheet: ${changes.join("; ")}.`
       : "Redraw this character design sheet cleanly.",
@@ -197,7 +238,9 @@ export function sheetPrompt(input: SheetInput, engine: EngineDef): string {
   const frame = [
     `Character design reference sheet on a plain white background, showing ${who}.`,
     `Left half: three full-body standing poses side by side at the same scale and height — front view, side view facing right, back view.`,
-    exps.length ? `Top right: a grid of ${exps.length} head-and-shoulders close-ups of the same face with different expressions: ${exps.map((e) => trimDot(e.en)).join(", ")}.` : "",
+    exps.length
+      ? `Top right: a grid of ${exps.length} head-and-shoulders close-ups of the same face, each with a different expression, ${expressionLayout(exps.map((e) => trimDot(e.en)))}.`
+      : "",
     parts.length ? `Bottom right, without the character: ${parts.map((p) => p.summary).join(", and ")}.` : "",
   ]
     .filter(Boolean)
@@ -221,7 +264,7 @@ export function sheetPrompt(input: SheetInput, engine: EngineDef): string {
   const item = (box: Box1000, caption: string, label = "character") => ({ label, caption, bbox: pixelBox(box, w, h) });
   const items = [
     ...VIEWS.map((v) => item(v.box, `The character, ${v.en}.`)),
-    ...expressionBoxes(exps.length).map((box, i) => item(box, `Head-and-shoulders close-up of the same character, ${trimDot(exps[i].en)} expression.`)),
+    ...expressionBoxes(exps.length).map((box, i) => item(box, `Head-and-shoulders close-up of the same character with this expression only: ${trimDot(exps[i].en)}.`)),
     ...parts.map((p) => item(p.box, `${p.caption} No people.`, "object")),
   ];
   return JSON.stringify({ summary: { caption: summary }, items, bbox_coord_space: "abs_centralized", bbox_format: "yxyx" });
