@@ -11,6 +11,8 @@ use tauri_plugin_opener::OpenerExt;
 /// 画像として保存できるファイルの置き場所(キャラクターのフォルダーの中)
 const FILE_DIRS: [&str; 2] = ["sheets", "refs"];
 const FILE_EXTS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+/** ライブラリの中の置き場所。characters はキャラクター、outfits は登録した衣装 */
+const KINDS: [&str; 2] = ["characters", "outfits"];
 
 fn err<E: ToString>(e: E) -> String {
     e.to_string()
@@ -78,19 +80,29 @@ fn library_dir(app: &AppHandle) -> Result<PathBuf, String> {
         Some(d) => d,
         None => default_library(app)?,
     };
-    fs::create_dir_all(dir.join("characters")).map_err(err)?;
+    for kind in KINDS {
+        fs::create_dir_all(dir.join(kind)).map_err(err)?;
+    }
     Ok(dir)
 }
 
-fn character_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
-    if !valid_id(id) {
-        return Err("invalid character id".into());
+/// キャラクターか衣装のフォルダー(kind は KINDS のどれか)
+fn entry_dir(app: &AppHandle, kind: &str, id: &str) -> Result<PathBuf, String> {
+    if !KINDS.contains(&kind) {
+        return Err("invalid kind".into());
     }
-    Ok(library_dir(app)?.join("characters").join(id))
+    if !valid_id(id) {
+        return Err("invalid id".into());
+    }
+    Ok(library_dir(app)?.join(kind).join(id))
 }
 
-/// "sheets/xxx.png" のような、キャラクターのフォルダーの中の画像だけを許す
-fn file_path(app: &AppHandle, id: &str, file: &str) -> Result<PathBuf, String> {
+fn character_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+    entry_dir(app, "characters", id)
+}
+
+/// "sheets/xxx.png" のような、キャラクター(か衣装)のフォルダーの中の画像だけを許す
+fn file_path(app: &AppHandle, kind: &str, id: &str, file: &str) -> Result<PathBuf, String> {
     let mut parts = file.split('/');
     let (Some(dir), Some(name), None) = (parts.next(), parts.next(), parts.next()) else {
         return Err("invalid file path".into());
@@ -101,7 +113,7 @@ fn file_path(app: &AppHandle, id: &str, file: &str) -> Result<PathBuf, String> {
     if !FILE_DIRS.contains(&dir) || !valid_id(stem) || !FILE_EXTS.contains(&ext.to_ascii_lowercase().as_str()) {
         return Err("invalid file path".into());
     }
-    Ok(character_dir(app, id)?.join(dir).join(name))
+    Ok(entry_dir(app, kind, id)?.join(dir).join(name))
 }
 
 #[tauri::command]
@@ -181,18 +193,59 @@ fn save_character(app: AppHandle, character: Value) -> Result<(), String> {
 #[tauri::command]
 fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
     character_dir(&app, &id)?;
-    move_to_trash(&library_dir(&app)?, &id)
+    move_to_trash(&library_dir(&app)?, "characters", &id)
 }
 
-fn move_to_trash(library: &Path, id: &str) -> Result<(), String> {
-    let dir = library.join("characters").join(id);
+fn move_to_trash(library: &Path, kind: &str, id: &str) -> Result<(), String> {
+    let dir = library.join(kind).join(id);
     if !dir.exists() {
         return Ok(());
     }
     let trash = library.join(".trash");
     fs::create_dir_all(&trash).map_err(err)?;
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(err)?.as_secs();
-    fs::rename(&dir, trash.join(format!("{id}-{stamp}"))).map_err(err)
+    // 衣装は、キャラクターと見分けられるよう名前の頭に outfit- を付ける
+    let prefix = if kind == "outfits" { "outfit-" } else { "" };
+    fs::rename(&dir, trash.join(format!("{prefix}{id}-{stamp}"))).map_err(err)
+}
+
+// ---------------------------------------------------------------- 衣装
+
+/// 登録した衣装の一覧(outfits/<id>/outfit.json の中身。新しい順)
+#[tauri::command]
+fn list_outfits(app: AppHandle) -> Result<Vec<Value>, String> {
+    list_outfits_in(&library_dir(&app)?)
+}
+
+fn list_outfits_in(library: &Path) -> Result<Vec<Value>, String> {
+    let mut list = Vec::new();
+    let Ok(entries) = fs::read_dir(library.join("outfits")) else { return Ok(list) };
+    for entry in entries.flatten() {
+        let Ok(text) = fs::read_to_string(entry.path().join("outfit.json")) else { continue };
+        if let Ok(o) = serde_json::from_str::<Value>(&text) {
+            list.push(o);
+        }
+    }
+    list.sort_by(|a, b| {
+        let key = |v: &Value| v.get("updatedAt").and_then(Value::as_str).unwrap_or("").to_string();
+        key(b).cmp(&key(a))
+    });
+    Ok(list)
+}
+
+#[tauri::command]
+fn save_outfit(app: AppHandle, outfit: Value) -> Result<(), String> {
+    let id = outfit.get("id").and_then(Value::as_str).ok_or("outfit id missing")?;
+    let dir = entry_dir(&app, "outfits", id)?;
+    fs::create_dir_all(&dir).map_err(err)?;
+    write_json(&dir.join("outfit.json"), &outfit)
+}
+
+/// 消した衣装も .trash に移す
+#[tauri::command]
+fn delete_outfit(app: AppHandle, id: String) -> Result<(), String> {
+    entry_dir(&app, "outfits", &id)?;
+    move_to_trash(&library_dir(&app)?, "outfits", &id)
 }
 
 /// 画像の中身をそのまま受け取る(id と file はヘッダーで渡す)
@@ -209,7 +262,9 @@ fn save_file(app: AppHandle, request: tauri::ipc::Request) -> Result<(), String>
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("file bytes expected".into());
     };
-    let path = file_path(&app, &header("id")?, &header("file")?)?;
+    // kind がなければキャラクター(0.1 のころの呼び方)
+    let kind = header("kind").unwrap_or_else(|_| "characters".into());
+    let path = file_path(&app, &kind, &header("id")?, &header("file")?)?;
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(err)?;
     }
@@ -217,14 +272,14 @@ fn save_file(app: AppHandle, request: tauri::ipc::Request) -> Result<(), String>
 }
 
 #[tauri::command]
-fn load_file(app: AppHandle, id: String, file: String) -> Result<tauri::ipc::Response, String> {
-    let bytes = fs::read(file_path(&app, &id, &file)?).map_err(err)?;
+fn load_file(app: AppHandle, id: String, file: String, kind: Option<String>) -> Result<tauri::ipc::Response, String> {
+    let bytes = fs::read(file_path(&app, kind.as_deref().unwrap_or("characters"), &id, &file)?).map_err(err)?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
-fn delete_file(app: AppHandle, id: String, file: String) -> Result<(), String> {
-    let path = file_path(&app, &id, &file)?;
+fn delete_file(app: AppHandle, id: String, file: String, kind: Option<String>) -> Result<(), String> {
+    let path = file_path(&app, kind.as_deref().unwrap_or("characters"), &id, &file)?;
     if path.exists() {
         fs::remove_file(path).map_err(err)?;
     }
@@ -387,7 +442,7 @@ fn import_into(library: &Path, path: &Path, mode: Option<&str>, new_id: Option<S
     let dest = root.join(&final_id);
     if dest.exists() {
         // 置き換える前のキャラクターは .trash に残す
-        if let Err(e) = move_to_trash(library, &final_id) {
+        if let Err(e) = move_to_trash(library, "characters", &final_id) {
             let _ = fs::remove_dir_all(&tmp);
             return Err(e);
         }
@@ -425,7 +480,10 @@ pub fn run() {
             load_file,
             delete_file,
             export_character,
-            import_character
+            import_character,
+            list_outfits,
+            save_outfit,
+            delete_outfit
         ])
         .run(tauri::generate_context!())
         .expect("error while running Euros");
@@ -484,6 +542,26 @@ mod tests {
         import_into(&dst, &file, Some("replace"), None).unwrap();
         assert_eq!(fs::read(dir.join("sheets/r1.png")).unwrap(), [1, 2, 3]);
         assert_eq!(fs::read_dir(dst.join(".trash")).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn lists_outfits_newest_first_and_trashes_them() {
+        let lib = temp("outfits");
+        for (id, at) in [("o1", "2026-01-01"), ("o2", "2026-02-01")] {
+            let dir = lib.join("outfits").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("outfit.json"), json!({ "id": id, "updatedAt": at }).to_string()).unwrap();
+        }
+        // 壊れた衣装は飛ばす
+        fs::create_dir_all(lib.join("outfits/bad")).unwrap();
+        fs::write(lib.join("outfits/bad/outfit.json"), "{").unwrap();
+        let ids: Vec<Value> = list_outfits_in(&lib).unwrap().iter().map(|o| o["id"].clone()).collect();
+        assert_eq!(ids, [json!("o2"), json!("o1")]);
+
+        move_to_trash(&lib, "outfits", "o1").unwrap();
+        assert!(!lib.join("outfits/o1").exists());
+        let trashed: Vec<String> = fs::read_dir(lib.join(".trash")).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
+        assert!(trashed[0].starts_with("outfit-o1-"));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Character, CharacterSummary, Settings } from "../types";
+import type { Character, CharacterSummary, Outfit, Settings } from "../types";
 import { DEFAULT_SETTINGS } from "../types";
 
 export const listCharacters = () => invoke<CharacterSummary[]>("list_characters");
@@ -8,10 +8,18 @@ export const saveCharacter = (character: Character) => invoke<void>("save_charac
 /** ライブラリの .trash に移す */
 export const deleteCharacter = (id: string) => invoke<void>("delete_character", { id });
 
+/** キャラクターか、登録した衣装か */
+export type Kind = "characters" | "outfits";
+
 /** file は "sheets/<id>.png" や "refs/<id>.jpg" */
-export const saveFile = (id: string, file: string, bytes: Uint8Array) => invoke<void>("save_file", bytes, { headers: { id, file } });
-export const loadFile = async (id: string, file: string) => new Uint8Array(await invoke<ArrayBuffer>("load_file", { id, file }));
-export const deleteFile = (id: string, file: string) => invoke<void>("delete_file", { id, file });
+export const saveFile = (id: string, file: string, bytes: Uint8Array, kind: Kind = "characters") => invoke<void>("save_file", bytes, { headers: { id, file, kind } });
+export const loadFile = async (id: string, file: string, kind: Kind = "characters") => new Uint8Array(await invoke<ArrayBuffer>("load_file", { id, file, kind }));
+export const deleteFile = (id: string, file: string, kind: Kind = "characters") => invoke<void>("delete_file", { id, file, kind });
+
+export const listOutfits = () => invoke<Outfit[]>("list_outfits");
+export const saveOutfit = (outfit: Outfit) => invoke<void>("save_outfit", { outfit });
+/** ライブラリの .trash に移す */
+export const deleteOutfit = (id: string) => invoke<void>("delete_outfit", { id });
 
 /** キャラクターを .euros(zip)に書き出す */
 export const exportCharacter = (id: string, path: string) => invoke<void>("export_character", { id, path });
@@ -21,7 +29,7 @@ export type ImportResult = { status: "imported" | "exists"; id: string; name: st
 export const importCharacter = (path: string, mode?: "replace" | "copy", newId?: string) =>
   invoke<ImportResult>("import_character", { path, mode: mode ?? null, newId: newId ?? null });
 
-export const libraryInfo =() => invoke<{ path: string; defaultPath: string }>("library_info");
+export const libraryInfo = () => invoke<{ path: string; defaultPath: string }>("library_info");
 export const openLibrary = () => invoke<void>("open_library");
 
 export function newId(): string {
@@ -31,8 +39,8 @@ export function newId(): string {
 const MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
 
 /** 保存した画像を <img> で見せる URL にする(使い終わったら URL.revokeObjectURL) */
-export async function fileUrl(id: string, file: string): Promise<string> {
-  const bytes = await loadFile(id, file);
+export async function fileUrl(id: string, file: string, kind: Kind = "characters"): Promise<string> {
+  const bytes = await loadFile(id, file, kind);
   const ext = file.split(".").pop()?.toLowerCase() ?? "png";
   return URL.createObjectURL(new Blob([bytes as BlobPart], { type: MIME[ext] ?? "image/png" }));
 }

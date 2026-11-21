@@ -7,6 +7,7 @@ import { deleteCharacter, loadCharacter, saveCharacter } from "../lib/storage";
 import { useFileUrl } from "../lib/useFileUrl";
 import { exportFlow } from "../lib/transfer";
 import { USE_LABEL } from "./ReferencePicker";
+import { RegisterOutfit } from "./RegisterOutfit";
 import { SheetViewer } from "./SheetViewer";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -63,6 +64,7 @@ export function CharacterDetail(props: { id: string; onBack: () => void; onEdit:
   const [compare, setCompare] = useState<string>();
   const [copied, setCopied] = useState(false);
   const [note, setNote] = useState("");
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     setCh(null);
@@ -154,12 +156,27 @@ export function CharacterDetail(props: { id: string; onBack: () => void; onEdit:
         <button className="primary" onClick={() => props.onEdit(ch.id)}>
           編集
         </button>
+        <button disabled={!shown?.image} onClick={() => setRegistering(true)} title="表示している版の衣装を、ほかのキャラクターに着せられるよう登録します">
+          衣装を登録
+        </button>
         <button onClick={() => void exportFile()} title="ほかのパソコンやアプリに渡せる .euros ファイルにします">
           書き出す
         </button>
         <button onClick={() => void remove()}>削除</button>
       </header>
       {note && <p className="muted small-text">{note}</p>}
+      {registering && shown && (
+        <RegisterOutfit
+          key={shown.id}
+          ch={ch}
+          rev={shown}
+          onClose={() => setRegistering(false)}
+          onDone={(name) => {
+            setRegistering(false);
+            setNote(`衣装「${name}」を登録しました。左の「衣装」の画面で見られます。`);
+          }}
+        />
+      )}
 
       {shown && !isCurrent && (
         <div className="notice">

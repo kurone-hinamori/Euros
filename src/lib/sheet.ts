@@ -149,8 +149,8 @@ export interface SheetInput {
   sheet: SheetOptions;
   /** 生成に使う参照画像(順番は ComfyUI に送る順。base があればその後ろ) */
   references: Pick<ReferenceImage, "use">[];
-  /** いまのシートを1枚目に参照して直す。changes は変える所(英語) */
-  base?: { changes: string[] };
+  /** いまのシートを1枚目に参照して直す。changes は変える所(英語)、keys は変わる外見の項目 */
+  base?: { changes: string[]; keys?: AppearanceKey[] };
 }
 
 /** MOSS-Image でいまのシートを直すときの指示(公式テンプレートの書き方:Change only … Keep … unchanged.) */
@@ -170,7 +170,16 @@ function mossEditPrompt(input: SheetInput): string {
     changes.length
       ? `Change only the following on this character design sheet: ${changes.join("; ")}.`
       : "Redraw this character design sheet cleanly.",
-    "Keep everything else exactly the same: the character, face, colors, outfit, accessories, poses, art style, white background and the layout of the sheet.",
+    // 変える項目を「そのまま」にも書くと、指示が食い違って変わらなかった
+    `Keep everything else exactly the same: ${[
+      "the character",
+      "face",
+      "colors",
+      ...(["outfit", "accessories"] as const).filter((k) => !input.base?.keys?.includes(k)),
+      "poses",
+      "art style",
+      "white background",
+    ].join(", ")} and the layout of the sheet.`,
     `The sheet has ${layout.join("; ")}. Keep each section as it is.`,
     ...input.references.map((r, i) => `${name(i + 1)} ${USE_EN[r.use]}.`),
     n ? "Do not copy the layout or background of the other reference images." : "",

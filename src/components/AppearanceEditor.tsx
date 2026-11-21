@@ -18,6 +18,8 @@ export function AppearanceEditor(props: {
   onTranslate: () => void;
   translating: boolean;
   disabled?: boolean;
+  /** 見せる項目(既定はすべて) */
+  keys?: readonly AppearanceKey[];
 }) {
   const { appearance: a, from } = props;
   const [showEn, setShowEn] = useState(false);
@@ -30,7 +32,7 @@ export function AppearanceEditor(props: {
   return (
     <div>
       <div className="appearance">
-        {APPEARANCE_KEYS.map((k) => (
+        {(props.keys ?? APPEARANCE_KEYS).map((k) => (
           <label key={k} className="field">
             <span>
               {APPEARANCE_LABEL[k]}

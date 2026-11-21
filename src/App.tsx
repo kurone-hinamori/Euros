@@ -10,6 +10,7 @@ import { NewCharacter } from "./components/NewCharacter";
 import { CharacterDetail } from "./components/CharacterDetail";
 import { EditCharacter } from "./components/EditCharacter";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { OutfitList } from "./components/OutfitList";
 import { confirmLeave } from "./lib/leaveGuard";
 
 export type View =
@@ -17,6 +18,7 @@ export type View =
   | { kind: "new" }
   | { kind: "detail"; id: string }
   | { kind: "edit"; id: string }
+  | { kind: "outfits" }
   | { kind: "settings" };
 
 export default function App() {
@@ -66,6 +68,7 @@ export default function App() {
             view.kind === "edit",
         )}
         {nav("新規作成", { kind: "new" }, view.kind === "new")}
+        {nav("衣装", { kind: "outfits" }, view.kind === "outfits")}
         <div className="spacer" />
         {nav("設定", { kind: "settings" }, view.kind === "settings")}
         {version && <div className="version">v{version}</div>}
@@ -105,6 +108,8 @@ export default function App() {
                 onDone={(id) => setView({ kind: "detail", id })}
                 onCancel={() => go({ kind: "detail", id: view.id })}
               />
+            ) : view.kind === "outfits" ? (
+              <OutfitList settings={settings} />
             ) : (
               <SettingsView settings={settings} onChange={changeSettings} />
             )}

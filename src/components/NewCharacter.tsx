@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Appearance, Profile, Settings, SheetOptions } from "../types";
+import type { Appearance, Outfit, Profile, Settings, SheetOptions } from "../types";
 import { type Candidate, type PendingReference, comfyName, createCharacter, emptyProfile, randomSeed } from "../lib/character";
 import { engineOf } from "../lib/comfy";
+import { outfitReference, wearOutfit } from "../lib/outfits";
 import { structureCharacter, translateFields } from "../lib/prompts";
 import { DEFAULT_SHEET, SHEET_SIZE, STYLE_PRESETS, sheetNegative, sheetPrompt } from "../lib/sheet";
 import { useImageJob } from "../lib/useImageJob";
 import { useLeaveGuard } from "../lib/leaveGuard";
 import { AppearanceEditor, type EnSource, sourceOf, staleKeys } from "./AppearanceEditor";
 import { ProfileEditor } from "./ProfileEditor";
+import { OutfitPicker } from "./OutfitPicker";
 import { ReferencePicker } from "./ReferencePicker";
 import { SheetOptionsEditor } from "./SheetOptionsEditor";
 import { SheetViewer } from "./SheetViewer";
@@ -20,6 +22,8 @@ export function NewCharacter(props: { settings: Settings; onCreated: (id: string
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [refs, setRefs] = useState<PendingReference[]>([]);
+  /** 着せる衣装と、その見本から足した参照画像 */
+  const [wear, setWear] = useState<{ outfit: Outfit; refId?: string } | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [appearance, setAppearance] = useState<Appearance | null>(null);
   const [from, setFrom] = useState<EnSource>({});
@@ -55,8 +59,10 @@ export function NewCharacter(props: { settings: Settings; onCreated: (id: string
     try {
       const out = await structureCharacter(settings, { name, description, references: refs.map((r) => r.label) }, ctrl.signal);
       setProfile({ ...emptyProfile(), ...out.profile });
-      setAppearance(out.appearance);
-      setFrom(sourceOf(out.appearance));
+      // 衣装を選んでいれば、整理した衣装・小物より優先する
+      const a = wear ? wearOutfit(out.appearance, wear.outfit).next : out.appearance;
+      setAppearance(a);
+      setFrom(sourceOf(a));
       setSheet((s) => ({ ...s, notHuman: out.notHuman }));
     } catch (e) {
       if (!ctrl.signal.aborted) setError(`外見を整理できませんでした:${message(e)}`);
@@ -85,6 +91,30 @@ export function NewCharacter(props: { settings: Settings; onCreated: (id: string
     } finally {
       setLlm(null);
     }
+  };
+
+  /** 登録した衣装を着せる(前に選んだ衣装の参照画像は外す) */
+  const pickOutfit = async (o: Outfit) => {
+    setError("");
+    let ref: PendingReference | null = null;
+    try {
+      ref = await outfitReference(o);
+    } catch (e) {
+      setError(`衣装の画像を読めませんでした(説明だけを使います):${message(e)}`);
+    }
+    const rest = refs.filter((r) => r.id !== wear?.refId);
+    setRefs(ref ? [...rest, ref] : rest);
+    setWear({ outfit: o, refId: ref?.id });
+    if (appearance) {
+      const next = wearOutfit(appearance, o).next;
+      setAppearance(next);
+      setFrom({ ...from, outfit: next.outfit.ja, accessories: next.accessories.ja });
+    }
+  };
+
+  const takeOff = () => {
+    setRefs(refs.filter((r) => r.id !== wear?.refId));
+    setWear(null);
   };
 
   const generate = async () => {
@@ -171,6 +201,19 @@ export function NewCharacter(props: { settings: Settings; onCreated: (id: string
         <div className="field">
           <span>参照画像(任意)</span>
           <ReferencePicker refs={refs} onChange={setRefs} disabled={busy} warning={refWarning} />
+        </div>
+        <div className="field">
+          <span>登録した衣装(任意)</span>
+          {wear && (
+            <div className="row" style={{ marginBottom: 6 }}>
+              <strong>{wear.outfit.name}</strong>
+              <span className="muted small-text">{wear.refId ? "衣装と小物の説明を書き換え、見本の画像を参照します" : "衣装と小物の説明を書き換えます(見本の画像はありません)"}</span>
+              <button className="small ghost" disabled={busy} onClick={takeOff}>
+                外す
+              </button>
+            </div>
+          )}
+          <OutfitPicker label={wear ? "ほかの衣装にする" : "衣装を選ぶ"} disabled={busy} onPick={(o) => void pickOutfit(o)} />
         </div>
         <div className="row" style={{ marginBottom: 0 }}>
           <button className={appearance ? "" : "primary"} disabled={busy || !description.trim()} onClick={() => void structure()}>

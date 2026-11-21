@@ -40,9 +40,11 @@ export function ReferencePicker(props: { refs: PendingReference[]; onChange: (re
         className={`drop${over ? " over" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
-          setOver(true);
+          e.dataTransfer.dropEffect = props.disabled ? "none" : "copy";
+          setOver(!props.disabled);
         }}
-        onDragLeave={() => setOver(false)}
+        // 中のボタンに入ったときは、外に出たことにしない
+        onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(false)}
         onDrop={(e) => {
           e.preventDefault();
           setOver(false);

@@ -122,6 +122,29 @@ export interface Character {
   currentRevision?: string;
 }
 
+// ---------------------------------------------------------------- 衣装
+// 登録した衣装(outfits/<id>/outfit.json)。ほかのキャラクターに着せるときに、説明と見本の画像を使う。
+// 形を変えるときは OUTFIT_SCHEMA_VERSION を上げ、docs/character-format.md も直す。
+
+export const OUTFIT_SCHEMA_VERSION = 1;
+
+export interface Outfit {
+  schemaVersion: number;
+  app: "Euros";
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  /** 服装(キャラクターの外見の outfit と同じ書き方) */
+  outfit: AppearanceField;
+  /** 小物(キャラクターの外見の accessories と同じ書き方)。服装だけの衣装では空 */
+  accessories: AppearanceField;
+  /** 見本の画像(refs/<id>.png など)。ないこともある */
+  image?: string;
+  /** 登録元のキャラクターと版(キャラクターから登録したとき) */
+  source?: { characterId: string; revisionId?: string };
+}
+
 /** 表情の1つ(ja は画面に出す名前、en は生成に使う説明) */
 export interface Expression {
   ja: string;

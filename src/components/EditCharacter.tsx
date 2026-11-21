@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Appearance, AppearanceKey, Box1000, Character, Profile, ReferenceImage, Revision, Settings, SheetOptions } from "../types";
+import type { Appearance, AppearanceKey, Box1000, Character, Outfit, Profile, ReferenceImage, Revision, Settings, SheetOptions } from "../types";
 import { APPEARANCE_KEYS, APPEARANCE_LABEL } from "../types";
 import { type Candidate, type PendingReference, addRevision, randomSeed, storeReferences } from "../lib/character";
 import { engineOf } from "../lib/comfy";
+import { outfitReference, wearOutfit, wearSummaryEn } from "../lib/outfits";
 import { applyInstruction, translateFields } from "../lib/prompts";
 import { sheetNegative, sheetPrompt } from "../lib/sheet";
 import { loadCharacter, loadFile, saveCharacter } from "../lib/storage";
@@ -10,6 +11,7 @@ import { useFileUrl } from "../lib/useFileUrl";
 import { useImageJob } from "../lib/useImageJob";
 import { useLeaveGuard } from "../lib/leaveGuard";
 import { AppearanceEditor, type EnSource, sourceOf, staleKeys } from "./AppearanceEditor";
+import { OutfitPicker } from "./OutfitPicker";
 import { ProfileEditor } from "./ProfileEditor";
 import { ReferencePicker, USE_LABEL } from "./ReferencePicker";
 import { RegionSelector } from "./RegionSelector";
@@ -33,6 +35,8 @@ interface Applied {
   summaryEn: string;
   before: Partial<Record<AppearanceKey, Appearance[AppearanceKey]>>;
   after: Partial<Record<AppearanceKey, Appearance[AppearanceKey]>>;
+  /** 衣装に着替えたときに足した参照画像(取り消すと外す) */
+  refId?: string;
 }
 
 /** 生成した候補と、その描き方 */
@@ -157,6 +161,33 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
     if (r.note) setNote(r.note);
   };
 
+  /** 登録した衣装に着替える。修正指示の1つとして扱い、見本の画像を参照画像に足す */
+  const wear = async (o: Outfit) => {
+    setError("");
+    setNote("");
+    const { next, keys } = wearOutfit(appearance, o);
+    if (!keys.length) {
+      setNote(`いまの衣装と小物は、すでに「${o.name}」と同じです。`);
+      return;
+    }
+    let ref: PendingReference | null = null;
+    try {
+      ref = await outfitReference(o);
+    } catch (e) {
+      setNote(`衣装の画像を読めなかったので、説明だけで着替えます:${message(e)}`);
+    }
+    const before: Applied["before"] = {};
+    const after: Applied["after"] = {};
+    for (const k of keys) {
+      before[k] = appearance[k];
+      after[k] = next[k];
+    }
+    setAppearance(next);
+    setFrom({ ...from, ...Object.fromEntries(keys.map((k) => [k, next[k].ja])) });
+    setApplied([...applied, { ja: `衣装「${o.name}」に着替える`, summaryEn: wearSummaryEn(o, keys), before, after, refId: ref?.id }]);
+    if (ref) setNewRefs([...newRefs, ref]);
+  };
+
   /** 反映した指示を取り消す(後から直した項目は、そのままにする) */
   const undo = (i: number) => {
     const a = applied[i];
@@ -167,6 +198,7 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
     setAppearance(next);
     setFrom({ ...from, ...Object.fromEntries(Object.keys(a.before).map((k) => [k, next[k as AppearanceKey].ja])) });
     setApplied(applied.filter((_, j) => j !== i));
+    if (a.refId) setNewRefs(newRefs.filter((r) => r.id !== a.refId));
   };
 
   const translate = async (a: Appearance): Promise<Appearance | null> => {
@@ -225,7 +257,7 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
           ? [...savedRefBytes.map((x) => ({ id: x.r.id, use: x.r.use, name: x.r.file.split("/").pop()!, bytes: x.bytes })), ...newRefs.map((x) => ({ id: x.id, use: x.use, name: `${x.id}.${x.ext}`, bytes: x.bytes }))]
           : [];
       const withBase = used === "reference";
-      prompt = sheetPrompt({ style, appearance: a, sheet, references: extra, base: withBase ? { changes: changesEn } : undefined }, def);
+      prompt = sheetPrompt({ style, appearance: a, sheet, references: extra, base: withBase ? { changes: changesEn, keys: changedFromBase } : undefined }, def);
       negative = def.negative ? sheetNegative(sheet) : "";
       refIds = [...(withBase ? [`sheet:${base.id}`] : []), ...extra.map((x) => x.id)];
       const baseImage = { name: `${ch.id}-${base.id}.png`, bytes: baseBytes };
@@ -336,6 +368,9 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
               </button>
             </>
           )}
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <OutfitPicker label="登録した衣装に着替える" disabled={busy} onPick={(o) => void wear(o)} />
         </div>
         {note && <p className="muted" style={{ marginTop: 0 }}>{note}</p>}
         {applied.length > 0 && (

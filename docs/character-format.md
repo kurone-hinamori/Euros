@@ -15,7 +15,11 @@ Euros が保存するキャラクターの形です。Notos など、ほかの�
       character.json
       sheets/<版の id>.png      … 版ごとのキャラクターシート
       refs/<参照画像の id>.<拡張子>  … 読み込んだ参照画像(png / jpg / jpeg / webp)
-  .trash/                       … 削除したキャラクター(読む側は無視する)
+  outfits/
+    <衣装の id>/
+      outfit.json               … 登録した衣装(下の「衣装」を参照)
+      refs/<画像の id>.<拡張子>  … 衣装の見本の画像
+  .trash/                       … 削除したキャラクターと衣装(読む側は無視する)
 ```
 
 ライブラリの場所:
@@ -151,3 +155,36 @@ Notos の CharacterSheet と同じ名前の項目は、同じ意味です。ど�
 ```
 
 (例では `appearance` の項目を一部省いています。実際のファイルには9項目すべてがあります。)
+
+## 衣装(outfit.json)
+
+Euros 0.2 から、衣装を登録して、ほかのキャラクターに着せられます。衣装は `outfits/<id>/outfit.json` に置きます。形の版は `schemaVersion`(いまは 1)で、キャラクターの版とは別に数えます。
+
+| 項目 | 内容 |
+| --- | --- |
+| `schemaVersion` | 衣装の形の版(1) |
+| `app` | いつも `"Euros"` |
+| `id` | 衣装の id(英数字・`-`・`_`、64文字まで) |
+| `createdAt` / `updatedAt` | 作った日時・直した日時(ISO 8601) |
+| `name` | 衣装の名前(「星見学園の制服」など) |
+| `outfit` | 服装。Appearance の `outfit` と同じ `{ ja, en }` |
+| `accessories` | 小物。Appearance の `accessories` と同じ `{ ja, en }`。服装だけの衣装では空の文字列 |
+| `image` | 見本の画像(`refs/<id>.png` など)。ないこともある |
+| `source` | キャラクターから登録したときの `{ characterId, revisionId }`。ないこともある |
+
+着せたキャラクターには、衣装の id は残りません。キャラクターの `appearance` の `outfit`・`accessories` が書き換わり、見本の画像はキャラクターの `refs/` に写して、`use` が `"outfit"`、`label` が `衣装:<名前>` の参照画像になります。衣装をあとで直したり消したりしても、着せたキャラクターは変わりません。
+
+```json
+{
+  "schemaVersion": 1,
+  "app": "Euros",
+  "id": "8d2c1e0f4b7a49c3a1e2",
+  "createdAt": "2026-11-21T09:00:00.000Z",
+  "updatedAt": "2026-11-21T09:00:00.000Z",
+  "name": "しずくの衣装",
+  "outfit": { "ja": "紺色のセーラー服に赤いリボン、黒いローファー", "en": "navy blue sailor school uniform with a red ribbon, black loafers" },
+  "accessories": { "ja": "首から下げた古い懐中時計", "en": "an old brass pocket watch hanging from the neck" },
+  "image": "refs/5f1a9b2c7d3e4f60a8b1.png",
+  "source": { "characterId": "a1b2c3d4e5f6a7b8c9d0", "revisionId": "r1" }
+}
+```

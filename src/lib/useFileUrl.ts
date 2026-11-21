@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
-import { fileUrl } from "./storage";
+import { type Kind, fileUrl } from "./storage";
 
 /** 保存した画像を <img> で見せる URL。画面を離れたら解放する */
-export function useFileUrl(id: string, file: string | null | undefined): string | undefined {
+export function useFileUrl(id: string, file: string | null | undefined, kind: Kind = "characters"): string | undefined {
   const [url, setUrl] = useState<string>();
   useEffect(() => {
     setUrl(undefined);
     if (!file) return;
     let made: string | undefined;
     let alive = true;
-    fileUrl(id, file)
+    fileUrl(id, file, kind)
       .then((u) => {
         made = u;
         if (alive) setUrl(u);
@@ -20,6 +20,6 @@ export function useFileUrl(id: string, file: string | null | undefined): string 
       alive = false;
       if (made) URL.revokeObjectURL(made);
     };
-  }, [id, file]);
+  }, [id, file, kind]);
   return url;
 }
