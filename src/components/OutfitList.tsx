@@ -4,6 +4,10 @@ import type { Appearance, Outfit, Settings } from "../types";
 import { readReference } from "../lib/character";
 import { OUTFIT_KEYS, createOutfit, outfitAppearance, setOutfitImage } from "../lib/outfits";
 import { translateFields } from "../lib/prompts";
+import { randomSeed } from "../lib/character";
+import { engineOf } from "../lib/comfy";
+import { OUTFIT_IMAGE_SIZE, STYLE_PRESETS, outfitImageNegative, outfitImagePrompt } from "../lib/sheet";
+import { useImageJob } from "../lib/useImageJob";
 import { deleteOutfit, listOutfits, saveOutfit } from "../lib/storage";
 import { useFileUrl } from "../lib/useFileUrl";
 import { confirmLeave, useLeaveGuard } from "../lib/leaveGuard";
@@ -88,7 +92,10 @@ function OutfitEditor(props: { settings: Settings; outfit: Outfit | null; onClos
   const [from, setFrom] = useState<EnSource>(() => sourceOf(appearance));
   /** 入れ替えた画像(null は外した、undefined は変えていない) */
   const [image, setImage] = useState<{ bytes: Uint8Array; ext: string; url: string } | null | undefined>();
-  const [busy, setBusy] = useState<"translate" | "save" | null>(null);
+  const [busy, setBusy] = useState<"translate" | "generate" | "save" | null>(null);
+  /** 説明から画像を作るときの画風 */
+  const [style, setStyle] = useState(STYLE_PRESETS[0].en);
+  const job = useImageJob(props.settings);
   const [error, setError] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const savedUrl = useFileUrl(o?.id ?? "", o?.image, "outfits");
@@ -131,6 +138,29 @@ function OutfitEditor(props: { settings: Settings; outfit: Outfit | null; onClos
     } catch (e) {
       setError(`英語に訳せませんでした:${message(e)}`);
       return null;
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** 衣装と小物の説明から、人が着ていない衣装だけの画像を作る */
+  const generate = async () => {
+    setError("");
+    const a = await translate();
+    if (!a) return;
+    if (!OUTFIT_KEYS.some((k) => a[k].en.trim())) {
+      setError("衣装か小物の説明を書いてください。");
+      return;
+    }
+    setBusy("generate");
+    try {
+      const [width, height] = OUTFIT_IMAGE_SIZE;
+      const seed = randomSeed();
+      const r = await job.run((models) => {
+        const def = engineOf(models.engine);
+        return { prompt: outfitImagePrompt(a, style, def), negative: def.negative ? outfitImageNegative() : undefined, width, height, seed, references: [] };
+      });
+      if (r) setImage({ bytes: r.png, ext: "png", url: URL.createObjectURL(new Blob([r.png as BlobPart], { type: "image/png" })) });
     } finally {
       setBusy(null);
     }
@@ -196,8 +226,32 @@ function OutfitEditor(props: { settings: Settings; outfit: Outfit | null; onClos
               </button>
             )}
           </div>
+          <div className="field" style={{ margin: "8px 0 0" }}>
+            <span>説明から画像を作る</span>
+            <select disabled={!!busy} value={style} onChange={(e) => setStyle(e.target.value)}>
+              {STYLE_PRESETS.map((p) => (
+                <option key={p.en} value={p.en}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <div className="row" style={{ margin: "6px 0 0" }}>
+              {busy === "generate" ? (
+                <button className="small" onClick={job.cancel}>
+                  中断
+                </button>
+              ) : (
+                <button className="small" disabled={!!busy} onClick={() => void generate()}>
+                  {shownUrl ? "作り直す" : "画像を作る"}
+                </button>
+              )}
+            </div>
+            {job.state.kind === "running" && <span className="muted small-text">{job.state.text}</span>}
+            {job.state.kind === "cancelled" && <span className="muted small-text">中断しました</span>}
+            {job.state.kind === "error" && <span className="error small-text">{job.state.message}</span>}
+          </div>
           <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => void pickFile(e.target.files).then(() => (e.target.value = ""))} />
-          <p className="muted small-text">人が着ていない衣装だけの絵が、ほかのキャラクターに着せやすい見本になります。</p>
+          <p className="muted small-text">人が着ていない衣装だけの絵が、ほかのキャラクターに着せやすい見本になります。「画像を作る」は、右の衣装と小物の説明から ComfyUI で描きます。</p>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <label className="field">
@@ -220,7 +274,7 @@ function OutfitEditor(props: { settings: Settings; outfit: Outfit | null; onClos
       </div>
       <div className="row" style={{ marginBottom: 0 }}>
         <button className="primary" disabled={!!busy} onClick={() => void save()}>
-          {busy === "save" ? "保存しています…" : busy === "translate" ? "英語に訳しています…" : o ? "保存" : "登録する"}
+          {busy === "save" ? "保存しています…" : busy === "translate" ? "英語に訳しています…" : busy === "generate" ? "画像を作っています…" : o ? "保存" : "登録する"}
         </button>
         <button disabled={busy === "save"} onClick={() => void confirmLeave().then((ok) => ok && props.onClose())}>
           やめる

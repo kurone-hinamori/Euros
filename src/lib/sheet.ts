@@ -59,10 +59,14 @@ const DETAIL_AREA: Box1000 = [570, 615, 970, 990];
  * 「衣装の部分の拡大図」とまとめて頼むと、服を切り取った布の断片のような絵になりやすかったので、
  * 人が着ていない衣装の全体と、単体の小物に分けて頼む
  */
-function detailParts(a: Appearance, notHuman: boolean): { box: Box1000; caption: string; summary: string }[] {
+function detailParts(
+  a: Pick<Appearance, "outfit" | "accessories">,
+  notHuman: boolean,
+  area: Box1000 = DETAIL_AREA,
+): { box: Box1000; caption: string; summary: string }[] {
   const outfit = trimDot(a.outfit.en);
   const acc = trimDot(a.accessories.en);
-  const [y0, x0, y1, x1] = DETAIL_AREA;
+  const [y0, x0, y1, x1] = area;
   const split = Math.round(x0 + (x1 - x0) * 0.58);
   const outfitPart = {
     caption: notHuman
@@ -79,8 +83,8 @@ function detailParts(a: Appearance, notHuman: boolean): { box: Box1000; caption:
       { box: [y0, x0, y1, split - 5], ...outfitPart },
       { box: [y0, split + 5, y1, x1], ...accPart },
     ];
-  if (outfit) return [{ box: DETAIL_AREA, ...outfitPart }];
-  if (acc) return [{ box: DETAIL_AREA, ...accPart }];
+  if (outfit) return [{ box: area, ...outfitPart }];
+  if (acc) return [{ box: area, ...accPart }];
   return [];
 }
 
@@ -274,3 +278,31 @@ export function sheetPrompt(input: SheetInput, engine: EngineDef): string {
 export function sheetNegative(sheet: SheetOptions): string {
   return [DEFAULT_NEGATIVE, "text, letters, labels, captions", sheet.notHuman ? "person, human, girl, boy, hands, holding" : ""].filter(Boolean).join(", ");
 }
+
+// ---------------------------------------------------------------- 衣装だけの画像
+
+/** 衣装の見本の画像の仕上がりの大きさ(4:3) */
+export const OUTFIT_IMAGE_SIZE: [number, number] = [1536, 1152];
+
+/**
+ * 衣装の説明から、衣装の見本の画像(人が着ていない衣装と小物を、白地に並べた絵)を描くプロンプト。
+ * シートの衣装・小物の区画と同じ描き方にする(この描き方で、着せるときの参照画像として使いやすかった)
+ */
+export function outfitImagePrompt(o: Pick<Appearance, "outfit" | "accessories">, style: string, engine: EngineDef): string {
+  const parts = detailParts(o, false, [40, 30, 960, 970]);
+  const summary = [
+    trimDot(style) ? `${trimDot(style)}.` : "",
+    `Costume design reference on a plain white background, without any person: ${parts.map((p) => p.summary).join(", and ")}.`,
+    "Front view, every item drawn whole, uncropped and clearly separated with white space. No person, no mannequin, no body, no hands, no text, no labels, no borders.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  // 区画の位置を JSON レイアウトで伝えられるのは MOSS-Image だけ
+  if (engine.id !== "moss") return summary;
+  const [w, h] = engine.drawSize(...OUTFIT_IMAGE_SIZE);
+  const items = parts.map((p) => ({ label: "object", caption: `${p.caption} No people.`, bbox: pixelBox(p.box, w, h) }));
+  return JSON.stringify({ summary: { caption: summary }, items, bbox_coord_space: "abs_centralized", bbox_format: "yxyx" });
+}
+
+/** 衣装の見本の画像の否定のプロンプト */
+export const outfitImageNegative = () => [DEFAULT_NEGATIVE, "person, human, girl, boy, mannequin, body, face, hands, text, letters, labels"].join(", ");
