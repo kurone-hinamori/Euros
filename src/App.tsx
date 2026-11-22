@@ -65,9 +65,9 @@ export default function App() {
           { kind: "list" },
           view.kind === "list" ||
             view.kind === "detail" ||
-            view.kind === "edit",
+            view.kind === "edit" ||
+            view.kind === "new",
         )}
-        {nav("新規作成", { kind: "new" }, view.kind === "new")}
         {nav("衣装", { kind: "outfits" }, view.kind === "outfits")}
         <div className="spacer" />
         {nav("設定", { kind: "settings" }, view.kind === "settings")}
