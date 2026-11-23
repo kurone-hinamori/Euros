@@ -6,6 +6,7 @@ export const USE_LABEL: Record<ReferenceImage["use"], string> = {
   all: "全体(顔・髪・衣装)",
   face: "顔と髪だけ",
   outfit: "衣装と小物だけ",
+  equipment: "装備品だけ",
   style: "画風だけ",
 };
 

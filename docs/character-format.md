@@ -19,7 +19,11 @@ Euros が保存するキャラクターの形です。Notos など、ほかの�
     <衣装の id>/
       outfit.json               … 登録した衣装(下の「衣装」を参照)
       refs/<画像の id>.<拡張子>  … 衣装の見本の画像
-  .trash/                       … 削除したキャラクターと衣装(読む側は無視する)
+  equipment/
+    <装備品の id>/
+      equipment.json            … 登録した装備品(下の「装備品」を参照)
+      refs/<画像の id>.<拡張子>  … 装備品の見本の画像
+  .trash/                       … 削除したキャラクター・衣装・装備品(読む側は無視する)
 ```
 
 ライブラリの場所:
@@ -66,7 +70,7 @@ refs/<参照画像の id>.<拡張子>
 
 `revisions` から `id` が `currentRevision` の版を探し、その `image`(例:`sheets/r1a2b3.png`)を読みます。`currentRevision` がないときや、版に `image` がないときは、シートはありません。
 
-シートは 2304×1536 の PNG です。左半分に正面・横・背面の全身、右上に表情一覧、右下に衣装・小物の詳細を描きます(区画の位置は決まっていません)。
+シートは 2304×1536 の PNG です。左半分に正面・横・背面の全身、右上に表情一覧、右下に衣装・小物・装備品の詳細を描きます(区画の位置は決まっていません)。
 
 ### Profile
 
@@ -81,9 +85,12 @@ Notos の CharacterSheet と同じ名前の項目は、同じ意味です。ど�
 
 ### Appearance
 
-次の9項目を持ちます。各項目は `{ "ja": 日本語の説明, "en": 生成に使う英語 }` です。
+次の10項目を持ちます。各項目は `{ "ja": 日本語の説明, "en": 生成に使う英語 }` です。
 
-`hair`(髪)、`eyes`(目)、`face`(顔立ち)、`skin`(肌)、`height`(身長)、`body`(体型)、`outfit`(衣装)、`accessories`(小物)、`other`(その他)
+`hair`(髪)、`eyes`(目)、`face`(顔立ち)、`skin`(肌)、`height`(身長)、`body`(体型)、`outfit`(衣装)、`accessories`(小物)、`equipment`(装備品)、`other`(その他)
+
+- `outfit` は服装の全体(鎧やマントも含む)、`accessories` は身に着ける小物(髪飾り・眼鏡・鞄など)、`equipment` は手に持つ物(剣・杖・弓・盾・道具など)です。
+- `equipment` は Euros 0.3 で足した項目です。0.2 までに作ったキャラクター(`appearance` と各版の `appearance`)にはないので、読む側はないときは空として扱ってください。0.2 までは、武器は `accessories` に入っています。
 
 ほかのアプリで画像を作るときは `en` を、人に見せるときは `ja` を使ってください。
 
@@ -94,7 +101,7 @@ Notos の CharacterSheet と同じ名前の項目は、同じ意味です。ど�
 | `id` | 参照画像の id |
 | `file` | `refs/<id>.<拡張子>` |
 | `label` | 元のファイル名 |
-| `use` | `all`(全体)/ `face`(顔)/ `outfit`(衣装)/ `style`(画風) |
+| `use` | `all`(全体)/ `face`(顔)/ `outfit`(衣装)/ `equipment`(装備品。0.3 から)/ `style`(画風) |
 | `addedAt` | 読み込んだ日時 |
 
 ### SheetOptions
@@ -186,5 +193,37 @@ Euros 0.2 から、衣装を登録して、ほかのキャラクターに着せ�
   "accessories": { "ja": "首から下げた古い懐中時計", "en": "an old brass pocket watch hanging from the neck" },
   "image": "refs/5f1a9b2c7d3e4f60a8b1.png",
   "source": { "characterId": "a1b2c3d4e5f6a7b8c9d0", "revisionId": "r1" }
+}
+```
+
+## 装備品(equipment.json)
+
+Euros 0.3 から、武器・盾・杖など手に持つ物を登録して、キャラクターに持たせられます。装備品は `equipment/<id>/equipment.json` に置きます。形の版は `schemaVersion`(いまは 1)で、キャラクターや衣装の版とは別に数えます。
+
+| 項目 | 内容 |
+| --- | --- |
+| `schemaVersion` | 装備品の形の版(1) |
+| `app` | `"Euros"` |
+| `id` | 装備品の id(英数字・`-`・`_`、64文字まで) |
+| `createdAt` / `updatedAt` | 作った日時と直した日時(ISO 8601) |
+| `name` | 装備品の名前(「鉄の剣」など) |
+| `category` | `weapon`(武器)/ `shield`(盾)/ `other`(そのほか) |
+| `description` | 見た目の説明。Appearance の `equipment` と同じ `{ ja, en }`(持ち方は書かない) |
+| `image` | 見本の画像(`refs/<id>.png` など)。ないこともある |
+| `source` | キャラクターのシートから登録したときの、元のキャラクターと版(`{ characterId, revisionId }`)。ないこともある |
+
+持たせたキャラクターには、装備品の id は残りません。キャラクターの `appearance.equipment` に説明が足されるか(複数なら日本語は「、」、英語は「; 」でつなぐ)、入れ替わります。見本の画像はキャラクターの `refs/` に写して、`use` が `"equipment"`、`label` が `装備品:<名前>` の参照画像になります。持ち替えるたびに新しい版ができるので、成長による装備品の移り変わりは `revisions` に残ります。
+
+```json
+{
+  "schemaVersion": 1,
+  "app": "Euros",
+  "id": "9c0d1e2f3a4b5c6d7e8f",
+  "createdAt": "2026-11-23T10:00:00.000Z",
+  "updatedAt": "2026-11-23T10:00:00.000Z",
+  "name": "鉄の剣",
+  "category": "weapon",
+  "description": { "ja": "刃の広い鉄の片手剣。柄に革を巻いている", "en": "a sturdy one-handed iron sword with a broad steel-gray blade and a leather-wrapped grip" },
+  "image": "refs/0a1b2c3d4e5f60718293.png"
 }
 ```

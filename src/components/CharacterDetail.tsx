@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
-import type { Character, Revision } from "../types";
+import type { Character, Revision, Settings } from "../types";
 import { APPEARANCE_KEYS, APPEARANCE_LABEL } from "../types";
 import { engineOf } from "../lib/comfy";
 import { deleteCharacter, loadCharacter, saveCharacter } from "../lib/storage";
@@ -8,6 +8,7 @@ import { useFileUrl } from "../lib/useFileUrl";
 import { exportFlow } from "../lib/transfer";
 import { USE_LABEL } from "./ReferencePicker";
 import { RegisterOutfit } from "./RegisterOutfit";
+import { RegisterEquipment } from "./RegisterEquipment";
 import { SheetViewer } from "./SheetViewer";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -54,7 +55,7 @@ function RefImage({ id, file }: { id: string; file: string }) {
   return url ? <img src={url} alt="" /> : <div className="noimage" />;
 }
 
-export function CharacterDetail(props: { id: string; onBack: () => void; onEdit: (id: string) => void }) {
+export function CharacterDetail(props: { id: string; settings: Settings; onBack: () => void; onEdit: (id: string) => void }) {
   const [ch, setCh] = useState<Character | null>(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("appearance");
@@ -64,7 +65,8 @@ export function CharacterDetail(props: { id: string; onBack: () => void; onEdit:
   const [compare, setCompare] = useState<string>();
   const [copied, setCopied] = useState(false);
   const [note, setNote] = useState("");
-  const [registering, setRegistering] = useState(false);
+  /** シートから登録している物 */
+  const [registering, setRegistering] = useState<"outfit" | "equipment" | null>(null);
 
   useEffect(() => {
     setCh(null);
@@ -156,8 +158,11 @@ export function CharacterDetail(props: { id: string; onBack: () => void; onEdit:
         <button className="primary" onClick={() => props.onEdit(ch.id)}>
           編集
         </button>
-        <button disabled={!shown?.image} onClick={() => setRegistering(true)} title="表示している版の衣装を、ほかのキャラクターに着せられるよう登録します">
+        <button disabled={!shown?.image} onClick={() => setRegistering("outfit")} title="表示している版の衣装を、ほかのキャラクターに着せられるよう登録します">
           衣装を登録
+        </button>
+        <button disabled={!shown?.image} onClick={() => setRegistering("equipment")} title="表示している版の武器などを、ほかのキャラクターに持たせられるよう登録します">
+          装備品を登録
         </button>
         <button onClick={() => void exportFile()} title="ほかのパソコンやアプリに渡せる .euros ファイルにします">
           書き出す
@@ -165,15 +170,28 @@ export function CharacterDetail(props: { id: string; onBack: () => void; onEdit:
         <button onClick={() => void remove()}>削除</button>
       </header>
       {note && <p className="muted small-text">{note}</p>}
-      {registering && shown && (
+      {registering === "outfit" && shown && (
         <RegisterOutfit
           key={shown.id}
           ch={ch}
           rev={shown}
-          onClose={() => setRegistering(false)}
+          onClose={() => setRegistering(null)}
           onDone={(name) => {
-            setRegistering(false);
+            setRegistering(null);
             setNote(`衣装「${name}」を登録しました。左の「衣装」の画面で見られます。`);
+          }}
+        />
+      )}
+      {registering === "equipment" && shown && (
+        <RegisterEquipment
+          key={shown.id}
+          settings={props.settings}
+          ch={ch}
+          rev={shown}
+          onClose={() => setRegistering(null)}
+          onDone={(name) => {
+            setRegistering(null);
+            setNote(`装備品「${name}」を登録しました。左の「装備品」の画面で見られます。`);
           }}
         />
       )}

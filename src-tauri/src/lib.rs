@@ -11,8 +11,8 @@ use tauri_plugin_opener::OpenerExt;
 /// 画像として保存できるファイルの置き場所(キャラクターのフォルダーの中)
 const FILE_DIRS: [&str; 2] = ["sheets", "refs"];
 const FILE_EXTS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
-/** ライブラリの中の置き場所。characters はキャラクター、outfits は登録した衣装 */
-const KINDS: [&str; 2] = ["characters", "outfits"];
+/** ライブラリの中の置き場所。characters はキャラクター、outfits は登録した衣装、equipment は登録した装備品 */
+const KINDS: [&str; 3] = ["characters", "outfits", "equipment"];
 
 fn err<E: ToString>(e: E) -> String {
     e.to_string()
@@ -204,24 +204,23 @@ fn move_to_trash(library: &Path, kind: &str, id: &str) -> Result<(), String> {
     let trash = library.join(".trash");
     fs::create_dir_all(&trash).map_err(err)?;
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(err)?.as_secs();
-    // 衣装は、キャラクターと見分けられるよう名前の頭に outfit- を付ける
-    let prefix = if kind == "outfits" { "outfit-" } else { "" };
+    // 衣装と装備品は、キャラクターと見分けられるよう名前の頭に outfit- や equipment- を付ける
+    let prefix = match kind {
+        "outfits" => "outfit-",
+        "equipment" => "equipment-",
+        _ => "",
+    };
     fs::rename(&dir, trash.join(format!("{prefix}{id}-{stamp}"))).map_err(err)
 }
 
-// ---------------------------------------------------------------- 衣装
+// ---------------------------------------------------------------- 衣装と装備品
 
-/// 登録した衣装の一覧(outfits/<id>/outfit.json の中身。新しい順)
-#[tauri::command]
-fn list_outfits(app: AppHandle) -> Result<Vec<Value>, String> {
-    list_outfits_in(&library_dir(&app)?)
-}
-
-fn list_outfits_in(library: &Path) -> Result<Vec<Value>, String> {
+/// 登録した物の一覧(<kind>/<id>/<file> の中身。新しい順)。読めないものは飛ばす
+fn list_entries_in(library: &Path, kind: &str, file: &str) -> Result<Vec<Value>, String> {
     let mut list = Vec::new();
-    let Ok(entries) = fs::read_dir(library.join("outfits")) else { return Ok(list) };
+    let Ok(entries) = fs::read_dir(library.join(kind)) else { return Ok(list) };
     for entry in entries.flatten() {
-        let Ok(text) = fs::read_to_string(entry.path().join("outfit.json")) else { continue };
+        let Ok(text) = fs::read_to_string(entry.path().join(file)) else { continue };
         if let Ok(o) = serde_json::from_str::<Value>(&text) {
             list.push(o);
         }
@@ -233,12 +232,22 @@ fn list_outfits_in(library: &Path) -> Result<Vec<Value>, String> {
     Ok(list)
 }
 
+fn save_entry(app: &AppHandle, kind: &str, file: &str, value: &Value) -> Result<(), String> {
+    let id = value.get("id").and_then(Value::as_str).ok_or("id missing")?;
+    let dir = entry_dir(app, kind, id)?;
+    fs::create_dir_all(&dir).map_err(err)?;
+    write_json(&dir.join(file), value)
+}
+
+/// 登録した衣装の一覧(outfits/<id>/outfit.json の中身。新しい順)
+#[tauri::command]
+fn list_outfits(app: AppHandle) -> Result<Vec<Value>, String> {
+    list_entries_in(&library_dir(&app)?, "outfits", "outfit.json")
+}
+
 #[tauri::command]
 fn save_outfit(app: AppHandle, outfit: Value) -> Result<(), String> {
-    let id = outfit.get("id").and_then(Value::as_str).ok_or("outfit id missing")?;
-    let dir = entry_dir(&app, "outfits", id)?;
-    fs::create_dir_all(&dir).map_err(err)?;
-    write_json(&dir.join("outfit.json"), &outfit)
+    save_entry(&app, "outfits", "outfit.json", &outfit)
 }
 
 /// 消した衣装も .trash に移す
@@ -246,6 +255,24 @@ fn save_outfit(app: AppHandle, outfit: Value) -> Result<(), String> {
 fn delete_outfit(app: AppHandle, id: String) -> Result<(), String> {
     entry_dir(&app, "outfits", &id)?;
     move_to_trash(&library_dir(&app)?, "outfits", &id)
+}
+
+/// 登録した装備品の一覧(equipment/<id>/equipment.json の中身。新しい順)
+#[tauri::command]
+fn list_equipment(app: AppHandle) -> Result<Vec<Value>, String> {
+    list_entries_in(&library_dir(&app)?, "equipment", "equipment.json")
+}
+
+#[tauri::command]
+fn save_equipment(app: AppHandle, equipment: Value) -> Result<(), String> {
+    save_entry(&app, "equipment", "equipment.json", &equipment)
+}
+
+/// 消した装備品も .trash に移す
+#[tauri::command]
+fn delete_equipment(app: AppHandle, id: String) -> Result<(), String> {
+    entry_dir(&app, "equipment", &id)?;
+    move_to_trash(&library_dir(&app)?, "equipment", &id)
 }
 
 /// 画像の中身をそのまま受け取る(id と file はヘッダーで渡す)
@@ -483,7 +510,10 @@ pub fn run() {
             import_character,
             list_outfits,
             save_outfit,
-            delete_outfit
+            delete_outfit,
+            list_equipment,
+            save_equipment,
+            delete_equipment
         ])
         .run(tauri::generate_context!())
         .expect("error while running Euros");
@@ -555,13 +585,21 @@ mod tests {
         // 壊れた衣装は飛ばす
         fs::create_dir_all(lib.join("outfits/bad")).unwrap();
         fs::write(lib.join("outfits/bad/outfit.json"), "{").unwrap();
-        let ids: Vec<Value> = list_outfits_in(&lib).unwrap().iter().map(|o| o["id"].clone()).collect();
+        let ids: Vec<Value> = list_entries_in(&lib, "outfits", "outfit.json").unwrap().iter().map(|o| o["id"].clone()).collect();
         assert_eq!(ids, [json!("o2"), json!("o1")]);
 
         move_to_trash(&lib, "outfits", "o1").unwrap();
         assert!(!lib.join("outfits/o1").exists());
         let trashed: Vec<String> = fs::read_dir(lib.join(".trash")).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
         assert!(trashed[0].starts_with("outfit-o1-"));
+
+        // 装備品も同じ形で読み、別の名前で .trash に移す
+        let dir = lib.join("equipment/e1");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("equipment.json"), json!({ "id": "e1", "updatedAt": "2026-03-01" }).to_string()).unwrap();
+        assert_eq!(list_entries_in(&lib, "equipment", "equipment.json").unwrap()[0]["id"], json!("e1"));
+        move_to_trash(&lib, "equipment", "e1").unwrap();
+        assert!(fs::read_dir(lib.join(".trash")).unwrap().flatten().any(|e| e.file_name().to_string_lossy().starts_with("equipment-e1-")));
     }
 
     #[test]

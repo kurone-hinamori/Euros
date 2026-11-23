@@ -34,6 +34,7 @@ const EN_LABEL: Record<AppearanceKey, string> = {
   body: "Body",
   outfit: "Outfit",
   accessories: "Accessories",
+  equipment: "Equipment",
   other: "Other",
 };
 
@@ -54,38 +55,50 @@ const VIEWS: { box: Box1000; en: string }[] = [
 const EXPRESSION_AREA: Box1000 = [30, 615, 540, 990];
 const DETAIL_AREA: Box1000 = [570, 615, 970, 990];
 
+/** 衣装・小物・装備品の区画に描くものの種類 */
+export type DetailKey = "outfit" | "accessories" | "equipment";
+
 /**
- * 衣装・小物の区画に描くもの。
+ * 衣装・小物・装備品の区画に描くもの。
  * 「衣装の部分の拡大図」とまとめて頼むと、服を切り取った布の断片のような絵になりやすかったので、
- * 人が着ていない衣装の全体と、単体の小物に分けて頼む
+ * 人が着ていない衣装の全体と、単体の小物・装備品に分けて頼む。
+ * 衣装は左、小物と装備品は右に縦に並べる(剣や杖は横長の枠に横向きで描ける)
  */
-function detailParts(
-  a: Pick<Appearance, "outfit" | "accessories">,
+export function detailParts(
+  a: Partial<Pick<Appearance, DetailKey>>,
   notHuman: boolean,
   area: Box1000 = DETAIL_AREA,
-): { box: Box1000; caption: string; summary: string }[] {
-  const outfit = trimDot(a.outfit.en);
-  const acc = trimDot(a.accessories.en);
+): { key: DetailKey; box: Box1000; caption: string; summary: string }[] {
+  const text = (k: DetailKey) => trimDot(a[k]?.en ?? "");
+  const outfit = text("outfit");
+  const parts = {
+    outfit: {
+      caption: notHuman
+        ? `The character's worn items on their own, without the character, each drawn whole and uncropped: ${outfit}.`
+        : `The complete outfit on its own, laid out flat with no person wearing it, every garment drawn whole and uncropped: ${outfit}.`,
+      summary: `the complete outfit laid out flat without a person (${outfit})`,
+    },
+    accessories: {
+      caption: `The accessories drawn as whole standalone objects, uncropped, nobody holding them: ${text("accessories")}.`,
+      summary: `the accessories as whole standalone objects (${text("accessories")})`,
+    },
+    equipment: {
+      caption: `The handheld equipment drawn as whole standalone objects lying flat, uncropped, nobody holding them: ${text("equipment")}.`,
+      summary: `the handheld equipment as whole standalone objects (${text("equipment")})`,
+    },
+  };
   const [y0, x0, y1, x1] = area;
-  const split = Math.round(x0 + (x1 - x0) * 0.58);
-  const outfitPart = {
-    caption: notHuman
-      ? `The character's worn items on their own, without the character, each drawn whole and uncropped: ${outfit}.`
-      : `The complete outfit on its own, laid out flat with no person wearing it, every garment drawn whole and uncropped: ${outfit}.`,
-    summary: `the complete outfit laid out flat without a person (${outfit})`,
+  const side = (["accessories", "equipment"] as const).filter((k) => text(k));
+  const left: DetailKey[] = outfit ? ["outfit"] : [];
+  // 右の列の物を、縦に分けて並べる
+  const stack = (keys: readonly DetailKey[], bx0: number, bx1: number) => {
+    const h = (y1 - y0) / keys.length;
+    return keys.map((k, i) => ({ key: k, box: [Math.round(y0 + i * h + (i ? 5 : 0)), bx0, Math.round(y0 + (i + 1) * h - (i < keys.length - 1 ? 5 : 0)), bx1] as Box1000, ...parts[k] }));
   };
-  const accPart = {
-    caption: `The accessories drawn as whole standalone objects, uncropped, nobody holding them: ${acc}.`,
-    summary: `the accessories as whole standalone objects (${acc})`,
-  };
-  if (outfit && acc)
-    return [
-      { box: [y0, x0, y1, split - 5], ...outfitPart },
-      { box: [y0, split + 5, y1, x1], ...accPart },
-    ];
-  if (outfit) return [{ box: area, ...outfitPart }];
-  if (acc) return [{ box: area, ...accPart }];
-  return [];
+  if (!left.length) return stack(side, x0, x1);
+  if (!side.length) return [{ key: "outfit", box: area, ...parts.outfit }];
+  const split = Math.round(x0 + (x1 - x0) * (side.length > 1 ? 0.52 : 0.58));
+  return [{ key: "outfit", box: [y0, x0, y1, split - 5] as Box1000, ...parts.outfit }, ...stack(side, split + 5, x1)];
 }
 
 /** 範囲を選ぶときの区画 */
@@ -161,6 +174,7 @@ const USE_EN: Record<ReferenceImage["use"], string> = {
   all: "shows this character. Keep the same face, hairstyle, outfit and colors",
   face: "is a reference for the face and hairstyle only",
   outfit: "is a reference for the outfit and accessories only",
+  equipment: "is a reference for the handheld equipment only (weapon, shield or tool). Copy the item's shape, colors and details, not the person or background",
   style: "is a reference for the art style only (line art and coloring). Do not copy its character or content",
 };
 
@@ -206,7 +220,7 @@ function mossEditPrompt(input: SheetInput): string {
   const layout = [
     "the three full-body views on the left (front, side, back)",
     exps.length ? `the grid of ${exps.length} face close-ups at the top right, each with its own expression (${expressionLayout(exps)})` : "",
-    "the outfit and accessories drawn on their own without the character at the bottom right",
+    `the ${input.appearance.equipment.en.trim() ? "outfit, accessories and equipment" : "outfit and accessories"} drawn on their own without the character at the bottom right`,
   ].filter(Boolean);
   const name = (i: number) => `Reference image ${i + 1}`;
   return [
@@ -220,7 +234,7 @@ function mossEditPrompt(input: SheetInput): string {
       "the character",
       "face",
       "colors",
-      ...(["outfit", "accessories"] as const).filter((k) => !input.base?.keys?.includes(k)),
+      ...(["outfit", "accessories", "equipment"] as const).filter((k) => !input.base?.keys?.includes(k)),
       "poses",
       "art style",
       "white background",
@@ -306,3 +320,31 @@ export function outfitImagePrompt(o: Pick<Appearance, "outfit" | "accessories">,
 
 /** 衣装の見本の画像の否定のプロンプト */
 export const outfitImageNegative = () => [DEFAULT_NEGATIVE, "person, human, girl, boy, mannequin, body, face, hands, text, letters, labels"].join(", ");
+
+// ---------------------------------------------------------------- 装備品だけの画像
+
+/** 装備品の見本の画像の仕上がりの大きさ(4:3) */
+export const EQUIPMENT_IMAGE_SIZE: [number, number] = [1536, 1152];
+
+/**
+ * 装備品の説明から、装備品の見本の画像(誰も持っていない装備品を、白地に置いた絵)を描くプロンプト。
+ * similar なら1枚目の参照画像を前の装備品として見せ、形や意匠を引き継いだ新しい装備品にする(銅の剣から鉄の剣など)
+ */
+export function equipmentImagePrompt(description: string, style: string, engine: EngineDef, similar = false): string {
+  const item = trimDot(description);
+  const lead = similar
+    ? `${engine.id === "minimax_h3" ? "<Picture 1>" : "The reference image"} shows an earlier version of this item. Keep its overall silhouette, proportions and design motifs, but draw the new item described below with its own materials and colors.`
+    : "";
+  // MOSS-Image でも JSON レイアウトは使わない。大きな枠を1つ渡すと、同じ剣を横に何本も並べて埋めた
+  return [
+    lead,
+    trimDot(style) ? `${trimDot(style)}.` : "",
+    `Item design reference on a plain white background showing only the following handheld equipment, nobody holding it: ${item}.`,
+    "Draw each described item exactly once (one sword means a single sword, not a row of copies). Front view, drawn whole and uncropped, large and centered with white space around it. No person, no hands, no body, no text, no labels, no borders.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** 装備品の見本の画像の否定のプロンプト */
+export const equipmentImageNegative = () => [DEFAULT_NEGATIVE, "person, human, girl, boy, body, face, hands, holding, text, letters, labels"].join(", ");

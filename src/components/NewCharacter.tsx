@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Appearance, Outfit, Profile, Settings, SheetOptions } from "../types";
+import type { Appearance, Equipment, Outfit, Profile, Settings, SheetOptions } from "../types";
 import { type Candidate, type PendingReference, comfyName, createCharacter, emptyProfile, randomSeed } from "../lib/character";
 import { engineOf } from "../lib/comfy";
 import { outfitReference, wearOutfit } from "../lib/outfits";
+import { equipmentReference, joinEquipment } from "../lib/equipment";
 import { structureCharacter, translateFields } from "../lib/prompts";
 import { DEFAULT_SHEET, SHEET_SIZE, STYLE_PRESETS, sheetNegative, sheetPrompt } from "../lib/sheet";
 import { useImageJob } from "../lib/useImageJob";
@@ -10,6 +11,7 @@ import { useLeaveGuard } from "../lib/leaveGuard";
 import { AppearanceEditor, type EnSource, sourceOf, staleKeys } from "./AppearanceEditor";
 import { ProfileEditor } from "./ProfileEditor";
 import { OutfitPicker } from "./OutfitPicker";
+import { EquipmentPicker } from "./EquipmentPicker";
 import { ReferencePicker } from "./ReferencePicker";
 import { SheetOptionsEditor } from "./SheetOptionsEditor";
 import { SheetViewer } from "./SheetViewer";
@@ -24,6 +26,8 @@ export function NewCharacter(props: { settings: Settings; onCreated: (id: string
   const [refs, setRefs] = useState<PendingReference[]>([]);
   /** 着せる衣装と、その見本から足した参照画像 */
   const [wear, setWear] = useState<{ outfit: Outfit; refId?: string } | null>(null);
+  /** 持たせる装備品と、その見本から足した参照画像 */
+  const [carry, setCarry] = useState<{ item: Equipment; refId?: string }[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [appearance, setAppearance] = useState<Appearance | null>(null);
   const [from, setFrom] = useState<EnSource>({});
@@ -60,7 +64,9 @@ export function NewCharacter(props: { settings: Settings; onCreated: (id: string
       const out = await structureCharacter(settings, { name, description, references: refs.map((r) => r.label) }, ctrl.signal);
       setProfile({ ...emptyProfile(), ...out.profile });
       // 衣装を選んでいれば、整理した衣装・小物より優先する
-      const a = wear ? wearOutfit(out.appearance, wear.outfit).next : out.appearance;
+      const worn = wear ? wearOutfit(out.appearance, wear.outfit).next : out.appearance;
+      // 装備品を選んでいれば、整理した装備品より優先する
+      const a = carry.length ? { ...worn, equipment: joinEquipment(carry.map((c) => c.item)) } : worn;
       setAppearance(a);
       setFrom(sourceOf(a));
       setSheet((s) => ({ ...s, notHuman: out.notHuman }));
@@ -110,6 +116,36 @@ export function NewCharacter(props: { settings: Settings; onCreated: (id: string
       setAppearance(next);
       setFrom({ ...from, outfit: next.outfit.ja, accessories: next.accessories.ja });
     }
+  };
+
+  /** 選んだ装備品を外見の装備品にする(装備品を選んでいなければ、いまの説明を残す) */
+  const setCarried = (list: typeof carry) => {
+    setCarry(list);
+    if (!appearance) return;
+    // 全部外したときは、選んだ装備品から作った説明だけを消す(直接書いた説明は残す)
+    if (!list.length && appearance.equipment.ja !== joinEquipment(carry.map((c) => c.item)).ja) return;
+    const equipment = joinEquipment(list.map((c) => c.item));
+    setAppearance({ ...appearance, equipment });
+    setFrom({ ...from, equipment: equipment.ja });
+  };
+
+  /** 登録した装備品を持たせる */
+  const pickEquipment = async (e: Equipment) => {
+    setError("");
+    let ref: PendingReference | null = null;
+    try {
+      ref = await equipmentReference(e);
+    } catch (err) {
+      setError(`装備品の画像を読めませんでした(説明だけを使います):${message(err)}`);
+    }
+    if (ref) setRefs([...refs, ref]);
+    setCarried([...carry, { item: e, refId: ref?.id }]);
+  };
+
+  const dropEquipment = (i: number) => {
+    const c = carry[i];
+    setRefs(refs.filter((r) => r.id !== c.refId));
+    setCarried(carry.filter((_, j) => j !== i));
   };
 
   const takeOff = () => {
@@ -214,6 +250,19 @@ export function NewCharacter(props: { settings: Settings; onCreated: (id: string
             </div>
           )}
           <OutfitPicker label={wear ? "ほかの衣装にする" : "衣装を選ぶ"} disabled={busy} onPick={(o) => void pickOutfit(o)} />
+        </div>
+        <div className="field">
+          <span>登録した装備品(任意)</span>
+          {carry.map((c, i) => (
+            <div key={c.item.id} className="row" style={{ marginBottom: 6 }}>
+              <strong>{c.item.name}</strong>
+              <span className="muted small-text">{c.refId ? "装備品の説明に入れ、見本の画像を参照します" : "装備品の説明に入れます(見本の画像はありません)"}</span>
+              <button className="small ghost" disabled={busy} onClick={() => dropEquipment(i)}>
+                外す
+              </button>
+            </div>
+          ))}
+          <EquipmentPicker label={carry.length ? "ほかの装備品も持たせる" : "装備品を選ぶ"} disabled={busy} exclude={carry.map((c) => c.item.id)} onPick={(e) => void pickEquipment(e)} />
         </div>
         <div className="row" style={{ marginBottom: 0 }}>
           <button className={appearance ? "" : "primary"} disabled={busy || !description.trim()} onClick={() => void structure()}>

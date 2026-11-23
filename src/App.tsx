@@ -11,6 +11,7 @@ import { CharacterDetail } from "./components/CharacterDetail";
 import { EditCharacter } from "./components/EditCharacter";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { OutfitList } from "./components/OutfitList";
+import { EquipmentList } from "./components/EquipmentList";
 import { confirmLeave } from "./lib/leaveGuard";
 
 export type View =
@@ -19,6 +20,7 @@ export type View =
   | { kind: "detail"; id: string }
   | { kind: "edit"; id: string }
   | { kind: "outfits" }
+  | { kind: "equipment" }
   | { kind: "settings" };
 
 export default function App() {
@@ -69,6 +71,7 @@ export default function App() {
             view.kind === "new",
         )}
         {nav("衣装", { kind: "outfits" }, view.kind === "outfits")}
+        {nav("装備品", { kind: "equipment" }, view.kind === "equipment")}
         <div className="spacer" />
         {nav("設定", { kind: "settings" }, view.kind === "settings")}
         {version && <div className="version">v{version}</div>}
@@ -98,6 +101,7 @@ export default function App() {
             ) : view.kind === "detail" ? (
               <CharacterDetail
                 id={view.id}
+                settings={settings}
                 onBack={() => setView({ kind: "list" })}
                 onEdit={(id) => setView({ kind: "edit", id })}
               />
@@ -110,6 +114,8 @@ export default function App() {
               />
             ) : view.kind === "outfits" ? (
               <OutfitList settings={settings} />
+            ) : view.kind === "equipment" ? (
+              <EquipmentList settings={settings} />
             ) : (
               <SettingsView settings={settings} onChange={changeSettings} />
             )}

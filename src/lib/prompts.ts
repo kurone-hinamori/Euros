@@ -9,7 +9,7 @@ const EN_RULES = `en は画像生成に使う英語です。
 - 見た目だけを、具体的な英語の語句で書く(色・長さ・形・素材・模様)。比喩や性格、物語は書かない。
 - 色は "pale blue" "dark brown" のように明るさまで書く。長さは "shoulder-length" "waist-length" のように体の位置で書く。
 - 身長は "short, about 150 cm, petite build" のように、cm と見た目の印象の両方で書く。
-- 説明がない項目は、ほかの項目と合う無難なデザインを考えて埋める(空にしない)。ただし other は、書くことがなければ空でよい。
+- 説明がない項目は、ほかの項目と合う無難なデザインを考えて埋める(空にしない)。ただし equipment と other は、説明になければ空にする(武器などを勝手に足さない)。
 - 1項目は1〜3文か、カンマ区切りの語句。`;
 
 const JA_RULES = `ja は人が読んで直す日本語です。en と同じ内容を、自然で短い日本語で書く。`;
@@ -40,7 +40,7 @@ export async function structureCharacter(s: Settings, input: { description: stri
 - profile:name(名前)、reading(読み仮名)、age(年齢)、gender(性別)、role(立場・職業)、personality(性格)、speech(口調・一人称)、background(経歴)。説明にないものは、説明に合う短い案を書く。名前が指定されていればそのまま使う。指定がなければ、説明に合う名前を考える(「未指定」などにしない)。
 - appearance:外見の項目。それぞれ ja と en を持つ。
 ${FIELD_GUIDE}
-  outfit は服装の全体(上着・下・靴まで)、accessories は身に着けている小物(髪飾り・眼鏡・鞄・武器など)。
+  outfit は服装の全体(上着・下・靴まで。鎧やマントもここ)、accessories は身に着けている小物(髪飾り・眼鏡・鞄など)、equipment は手に持つ装備品(剣・杖・弓・盾・銃・道具など。複数なら全部)。equipment には物の見た目だけを書き、どちらの手に持つかなどの持ち方は書かない(シートでは装備品を単体で描くため)。
 - notHuman:人ではない(ロボット・動物・物など)なら true。人の姿をした人外(獣耳の人やアンドロイドなど)は false。
 
 ${EN_RULES}

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Appearance, AppearanceKey, Box1000, Character, Outfit, Profile, ReferenceImage, Revision, Settings, SheetOptions } from "../types";
+import type { Appearance, AppearanceKey, Box1000, Character, Equipment, Outfit, Profile, ReferenceImage, Revision, Settings, SheetOptions } from "../types";
 import { APPEARANCE_KEYS, APPEARANCE_LABEL } from "../types";
 import { type Candidate, type PendingReference, addRevision, randomSeed, storeReferences } from "../lib/character";
 import { engineOf } from "../lib/comfy";
 import { outfitReference, wearOutfit, wearSummaryEn } from "../lib/outfits";
+import { type EquipMode, equip, equipSummaryEn, equipmentReference } from "../lib/equipment";
 import { applyInstruction, translateFields } from "../lib/prompts";
 import { expressionChanges, sheetNegative, sheetPrompt } from "../lib/sheet";
 import { loadCharacter, loadFile, saveCharacter } from "../lib/storage";
@@ -12,6 +13,7 @@ import { useImageJob } from "../lib/useImageJob";
 import { useLeaveGuard } from "../lib/leaveGuard";
 import { AppearanceEditor, type EnSource, sourceOf, staleKeys } from "./AppearanceEditor";
 import { OutfitPicker } from "./OutfitPicker";
+import { EquipmentPicker } from "./EquipmentPicker";
 import { ProfileEditor } from "./ProfileEditor";
 import { ReferencePicker, USE_LABEL } from "./ReferencePicker";
 import { RegionSelector } from "./RegionSelector";
@@ -62,6 +64,8 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
   const [instruction, setInstruction] = useState("");
   const [applied, setApplied] = useState<Applied[]>([]);
   const [note, setNote] = useState("");
+  /** 登録した装備品を、いまの装備品に足すか、持ち替えるか */
+  const [equipMode, setEquipMode] = useState<EquipMode>("replace");
   const [method, setMethod] = useState<Method>("reference");
   const [boxes, setBoxes] = useState<Box1000[]>([]);
   const [candidates, setCandidates] = useState<EditCandidate[]>([]);
@@ -185,6 +189,37 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
     setAppearance(next);
     setFrom({ ...from, ...Object.fromEntries(keys.map((k) => [k, next[k].ja])) });
     setApplied([...applied, { ja: `衣装「${o.name}」に着替える`, summaryEn: wearSummaryEn(o, keys), before, after, refId: ref?.id }]);
+    if (ref) setNewRefs([...newRefs, ref]);
+  };
+
+  /** 登録した装備品を持たせる。修正指示の1つとして扱い、見本の画像を参照画像に足す */
+  const equipItem = async (e: Equipment) => {
+    setError("");
+    setNote("");
+    const mode: EquipMode = appearance.equipment.ja.trim() ? equipMode : "add";
+    const { next, changed } = equip(appearance, e, mode);
+    if (!changed) {
+      setNote(`「${e.name}」は、すでに装備品に入っています。`);
+      return;
+    }
+    let ref: PendingReference | null = null;
+    try {
+      ref = await equipmentReference(e);
+    } catch (err) {
+      setNote(`装備品の画像を読めなかったので、説明だけで持たせます:${message(err)}`);
+    }
+    setAppearance(next);
+    setFrom({ ...from, equipment: next.equipment.ja });
+    setApplied([
+      ...applied,
+      {
+        ja: mode === "replace" ? `装備品を「${e.name}」に持ち替える` : `装備品に「${e.name}」を足す`,
+        summaryEn: equipSummaryEn(e, mode),
+        before: { equipment: appearance.equipment },
+        after: { equipment: next.equipment },
+        refId: ref?.id,
+      },
+    ]);
     if (ref) setNewRefs([...newRefs, ref]);
   };
 
@@ -369,6 +404,26 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
         </div>
         <div style={{ marginBottom: 8 }}>
           <OutfitPicker label="登録した衣装に着替える" disabled={busy} onPick={(o) => void wear(o)} />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          {appearance.equipment.ja.trim() && (
+            <div className="row" style={{ marginBottom: 4 }}>
+              <span className="small-text">いまの装備品:{appearance.equipment.ja}</span>
+              <label className="check">
+                <input type="radio" name="equip-mode" disabled={busy} checked={equipMode === "replace"} onChange={() => setEquipMode("replace")} />
+                持ち替える
+              </label>
+              <label className="check">
+                <input type="radio" name="equip-mode" disabled={busy} checked={equipMode === "add"} onChange={() => setEquipMode("add")} />
+                足す
+              </label>
+            </div>
+          )}
+          <EquipmentPicker
+            label={appearance.equipment.ja.trim() ? (equipMode === "replace" ? "登録した装備品に持ち替える" : "登録した装備品を足す") : "登録した装備品を持たせる"}
+            disabled={busy}
+            onPick={(e) => void equipItem(e)}
+          />
         </div>
         {note && <p className="muted" style={{ marginTop: 0 }}>{note}</p>}
         {applied.length > 0 && (
