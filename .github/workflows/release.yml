@@ -56,4 +56,4 @@ jobs:
           releaseBody: "Windows 版インストーラーです。インストール済みの場合は、アプリ起動時に更新が案内されます。"
           releaseDraft: false
           prerelease: false
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
