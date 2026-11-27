@@ -288,12 +288,25 @@ export interface ImageFiles {
   vae?: string;
 }
 
+/** ComfyUI の KSampler の設定。空の項目はモデルの既定値を使う */
+export interface SamplingParams {
+  steps?: number;
+  cfg?: number;
+  sampler?: string;
+  scheduler?: string;
+}
+
+/** text: 文章だけで描くとき、reference: 参照画像を使うとき(既定値が違うモデルがある) */
+export type SamplingMode = "text" | "reference";
+
 export interface Settings {
   /** 画像生成に使う ComfyUI の URL */
   comfyUrl: string;
   imageEngine: ImageEngine;
   /** モデルごとの ComfyUI のファイル(空なら自動で選ぶ) */
   imageFiles?: Partial<Record<ImageEngine, ImageFiles>>;
+  /** モデルごとのステップ数・CFG など(空ならモデルの既定値) */
+  sampling?: Partial<Record<ImageEngine, Partial<Record<SamplingMode, SamplingParams>>>>;
   /** 日本語からプロンプトを作る Ollama */
   ollamaUrl: string;
   model: string;

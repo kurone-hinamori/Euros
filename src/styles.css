@@ -105,6 +105,7 @@ textarea.en, input.en { font-family: Consolas, "BIZ UDGothic", monospace; font-s
 .profile .wide { grid-column: span 5; }
 .shape-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .shape-num { width: 130px; }
+.sampling { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 12px; }
 .exp-row { display: grid; grid-template-columns: 140px 1fr auto; gap: 8px; margin-bottom: 6px; }
 details.card > summary { cursor: pointer; list-style: none; }
 details.card > summary::before { content: "＋ "; color: var(--muted); }
