@@ -122,6 +122,59 @@ export interface Character {
   revisions: Revision[];
   /** 採用中の版 */
   currentRevision?: string;
+  /** 3D の目安(Boreas が読む)。v0.4.0 で足した項目なので、ないこともある */
+  figure?: Figure;
+}
+
+// ---------------------------------------------------------------- 3D の目安
+// Boreas が素体や形を作るための数値。どれも省略できる。読むときは lib/figure.ts の normalizeFigure で、おかしい値を捨てる。
+
+/** 人物の体型(Boreas の素体の種類に対応する) */
+export const BUILDS = ["slim", "standard", "sturdy"] as const;
+export type Build = (typeof BUILDS)[number];
+export const BUILD_LABEL: Record<Build, string> = { slim: "細身", standard: "標準", sturdy: "がっしり" };
+
+/** 人ではない登場人物の形の種類 */
+export const BODY_FORMS = ["sphere", "blob", "quadruped", "biped_monster", "object"] as const;
+export type BodyForm = (typeof BODY_FORMS)[number];
+export const BODY_FORM_LABEL: Record<BodyForm, string> = { sphere: "球", blob: "不定形", quadruped: "四足", biped_monster: "二足の怪物", object: "物" };
+
+/** 人ではない登場人物の大きさ(m)。形の種類ごとに使う項目は BODY_SIZE_KEYS */
+export interface BodySize {
+  diameter?: number;
+  width?: number;
+  depth?: number;
+  height?: number;
+  length?: number;
+}
+export type BodySizeKey = keyof BodySize;
+export const BODY_SIZE_KEYS: Record<BodyForm, BodySizeKey[]> = {
+  sphere: ["diameter"],
+  blob: ["width", "depth", "height"],
+  quadruped: ["length", "height"],
+  biped_monster: ["height", "width"],
+  object: ["width", "depth", "height"],
+};
+
+export interface BodyShape {
+  form: BodyForm;
+  /** 単位は m */
+  size: BodySize;
+  /** 腕があるか(二足の怪物) */
+  arms?: boolean;
+  /** 尾があるか(四足・二足の怪物) */
+  tail?: boolean;
+}
+
+export interface Figure {
+  /** 人物の身長(cm) */
+  heightCm?: number;
+  /** 人物の体型 */
+  build?: Build;
+  /** 頭身 */
+  heads?: number;
+  /** 人ではない登場人物の形と大きさ */
+  body?: BodyShape;
 }
 
 // ---------------------------------------------------------------- 衣装
@@ -158,6 +211,30 @@ export const EQUIPMENT_CATEGORIES = ["weapon", "shield", "other"] as const;
 export type EquipmentCategory = (typeof EQUIPMENT_CATEGORIES)[number];
 export const EQUIPMENT_CATEGORY_LABEL: Record<EquipmentCategory, string> = { weapon: "武器", shield: "盾", other: "そのほか" };
 
+/** 3D の目安の型 */
+export const EQUIPMENT_FORMS = ["rod", "blade", "box", "cylinder", "plate", "sphere"] as const;
+export type EquipmentForm = (typeof EQUIPMENT_FORMS)[number];
+export const EQUIPMENT_FORM_LABEL: Record<EquipmentForm, string> = { rod: "棒", blade: "刃物", box: "箱", cylinder: "円柱", plate: "板", sphere: "球" };
+
+/** 装備品の寸法(cm)。型ごとに使う項目は EQUIPMENT_SIZE_KEYS */
+export interface EquipmentSize {
+  length?: number;
+  width?: number;
+  thickness?: number;
+  diameter?: number;
+  tipDiameter?: number;
+  gripLength?: number;
+}
+export type EquipmentSizeKey = keyof EquipmentSize;
+export const EQUIPMENT_SIZE_KEYS: Record<EquipmentForm, EquipmentSizeKey[]> = {
+  rod: ["length", "diameter", "tipDiameter"],
+  blade: ["length", "width", "thickness", "gripLength"],
+  box: ["length", "width", "thickness"],
+  cylinder: ["length", "diameter"],
+  plate: ["length", "width", "thickness"],
+  sphere: ["diameter"],
+};
+
 export interface Equipment {
   schemaVersion: number;
   app: "Euros";
@@ -172,6 +249,10 @@ export interface Equipment {
   image?: string;
   /** 登録元のキャラクターと版(キャラクターから登録したとき) */
   source?: { characterId: string; revisionId?: string };
+  /** 3D の目安の型(Boreas が読む)。v0.4.0 で足した項目なので、ないこともある */
+  form?: EquipmentForm;
+  /** 寸法(cm)。form とあわせて v0.4.0 で足した */
+  size?: EquipmentSize;
 }
 
 /** 表情の1つ(ja は画面に出す名前、en は生成に使う説明) */

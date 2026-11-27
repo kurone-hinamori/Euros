@@ -103,6 +103,8 @@ textarea.en, input.en { font-family: Consolas, "BIZ UDGothic", monospace; font-s
 .appearance { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0 16px; }
 .profile { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0 12px; }
 .profile .wide { grid-column: span 5; }
+.shape-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.shape-num { width: 130px; }
 .exp-row { display: grid; grid-template-columns: 140px 1fr auto; gap: 8px; margin-bottom: 6px; }
 details.card > summary { cursor: pointer; list-style: none; }
 details.card > summary::before { content: "＋ "; color: var(--muted); }

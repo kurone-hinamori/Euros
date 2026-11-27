@@ -1,6 +1,7 @@
 import type { Appearance, AppearanceField, Equipment, EquipmentCategory } from "../types";
 import { EQUIPMENT_SCHEMA_VERSION } from "../types";
 import type { PendingReference } from "./character";
+import { withEquipmentShape } from "./figure";
 import { loadFile, newId, saveEquipment, saveFile } from "./storage";
 
 // 登録した装備品。キャラクターに持たせるときは、外見の装備品(equipment)に説明を足すか入れ替え、
@@ -26,9 +27,11 @@ export async function createEquipment(input: {
   description: AppearanceField;
   image?: { bytes: Uint8Array; ext: string };
   source?: Equipment["source"];
+  /** 3D の型と寸法 */
+  shape?: Pick<Equipment, "form" | "size">;
 }): Promise<Equipment> {
   const now = new Date().toISOString();
-  const base: Equipment = {
+  const base: Equipment = withEquipmentShape({
     schemaVersion: EQUIPMENT_SCHEMA_VERSION,
     app: "Euros",
     id: newId(),
@@ -38,7 +41,7 @@ export async function createEquipment(input: {
     category: input.category,
     description: input.description,
     ...(input.source ? { source: input.source } : {}),
-  };
+  }, input.shape ?? {});
   const e = await setEquipmentImage(base, input.image ?? null);
   await saveEquipment(e);
   return e;

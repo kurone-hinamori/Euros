@@ -3,6 +3,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import type { Character, Revision, Settings } from "../types";
 import { APPEARANCE_KEYS, APPEARANCE_LABEL } from "../types";
 import { engineOf } from "../lib/comfy";
+import { figureText } from "../lib/figure";
 import { deleteCharacter, loadCharacter, saveCharacter } from "../lib/storage";
 import { useFileUrl } from "../lib/useFileUrl";
 import { exportFlow } from "../lib/transfer";
@@ -283,6 +284,12 @@ export function CharacterDetail(props: { id: string; settings: Settings; onBack:
                 <th>表情</th>
                 <td>{ch.sheet.expressions.map((e) => e.ja).join("、")}</td>
               </tr>
+              {figureText(ch.figure, ch.sheet.notHuman) && (
+                <tr>
+                  <th>3D の目安</th>
+                  <td>{figureText(ch.figure, ch.sheet.notHuman)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         )}
