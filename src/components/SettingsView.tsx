@@ -6,6 +6,7 @@ import type { Settings } from "../types";
 import { comfyStats } from "../lib/comfy";
 import { ImageModelSettings } from "./ImageModelSettings";
 import { ComfyTest } from "./ComfyTest";
+import { SamplingSettings } from "./SamplingSettings";
 import { listModels } from "../lib/ollama";
 import { libraryInfo, openLibrary, saveSettings } from "../lib/storage";
 import { installUpdate } from "../lib/updater";
@@ -115,6 +116,10 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
           {statusLine(comfy)}
         </div>
         <ImageModelSettings settings={settings} onChange={onChange} />
+      </section>
+
+      <section className="card">
+        <SamplingSettings settings={settings} onChange={onChange} />
       </section>
 
       <section className="card">

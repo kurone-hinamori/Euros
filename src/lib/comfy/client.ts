@@ -1,10 +1,11 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import type { ImageEngine, Settings } from "../../types";
-import { type ComfyModels, type FileKind, type ImageRequest, type UploadedRequest, engineOf, FILE_KINDS } from "./engines";
+import { type ComfyModels, type FileKind, type ImageRequest, type UploadedRequest, engineOf, FILE_KINDS, resolveSampling } from "./engines";
 import { type Graph, type Link, redrawComposite } from "./graph";
 
 type Url = Pick<Settings, "comfyUrl">;
 type Conn = Pick<Settings, "comfyUrl" | "imageEngine" | "imageFiles">;
+type Gen = Pick<Settings, "comfyUrl" | "sampling">;
 
 const base = (s: Url) => s.comfyUrl.replace(/\/+$/, "");
 
@@ -57,6 +58,12 @@ export async function comfyFileLists(s: Url): Promise<Record<FileKind, string[]>
   return { unet, clip, vae };
 }
 
+/** ComfyUI の KSampler で選べるサンプラーとスケジューラー */
+export async function comfySamplerLists(s: Url): Promise<{ samplers: string[]; schedulers: string[] }> {
+  const [samplers, schedulers] = await Promise.all([modelsOf(s, "KSampler", "sampler_name"), modelsOf(s, "KSampler", "scheduler")]);
+  return { samplers, schedulers };
+}
+
 /** 「自動」で選ぶファイル */
 export const autoFile = (engine: ImageEngine, kind: FileKind, list: string[]) =>
   engineOf(engine).files[kind].prefixes.map((p) => list.find((m) => m.startsWith(p))).find(Boolean);
@@ -88,11 +95,14 @@ export async function detectComfy(s: Conn): Promise<ComfyModels> {
 const SAVE_NODE = "save";
 
 /** ComfyUI の API 形式のワークフロー全体 */
-export function comfyWorkflow(m: ComfyModels, r: UploadedRequest): Graph {
+export function comfyWorkflow(m: ComfyModels, r: UploadedRequest, sampling?: Settings["sampling"]): Graph {
   const def = engineOf(m.engine);
-  const size = def.drawSize(r.width, r.height, r.references.length > 0 && def.canReference(m));
+  const referencing = r.references.length > 0 && def.canReference(m);
+  const size = def.drawSize(r.width, r.height, referencing);
+  const mode = referencing && def.sampling.reference ? "reference" : "text";
+  const sp = resolveSampling(def.sampling[mode] ?? def.sampling.text, sampling?.[def.id]?.[mode]);
   const g: Graph = {};
-  let image: Link = def.build(g, m, r, size);
+  let image: Link = def.build(g, m, r, size, sp);
   const [w, h] = [r.width, r.height];
   if (size[0] !== w || size[1] !== h) {
     const up = size[0] < w || size[1] < h;
@@ -193,7 +203,7 @@ async function freeOtherModels(s: Url, m: ComfyModels, onProgress: (p: Progress)
 
 /** 画像を1枚作って PNG で受け取る。中断すると ComfyUI 側の処理も止める */
 export async function generateImage(
-  s: Url,
+  s: Gen,
   models: ComfyModels,
   req: ImageRequest,
   signal: AbortSignal,
@@ -205,7 +215,7 @@ export async function generateImage(
   const redraw = req.redraw && { name: await uploadImage(s, req.redraw.name, req.redraw.bytes), boxes: req.redraw.boxes };
   await freeOtherModels(s, models, onProgress);
 
-  const workflow = comfyWorkflow(models, { ...req, references, redraw });
+  const workflow = comfyWorkflow(models, { ...req, references, redraw }, s.sampling);
   const res = await post(s, "/prompt", { prompt: workflow, client_id: "euros" });
   const sent = (await res.json().catch(() => ({}))) as { prompt_id?: string; error?: { message?: string } };
   if (!res.ok || !sent.prompt_id) throw new Error(`ComfyUI が受け付けませんでした:${sent.error?.message ?? res.status}`);

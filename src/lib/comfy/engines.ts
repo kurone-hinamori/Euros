@@ -1,4 +1,4 @@
-import type { Box1000, ImageEngine } from "../../types";
+import type { Box1000, ImageEngine, SamplingMode, SamplingParams } from "../../types";
 import { type Graph, type Link, redrawLatent, referenceNode } from "./graph";
 
 // 画像生成のモデルの登録。モデルを増やすときは、EngineDef を1つ作って ENGINES に足す。
@@ -52,6 +52,32 @@ export type UploadedRequest = Omit<ImageRequest, "references" | "redraw"> & {
 
 export const DEFAULT_NEGATIVE = "nsfw, worst quality, low quality, bad anatomy, extra fingers, watermark, signature, jpeg artifact";
 
+export type Sampling = Required<SamplingParams>;
+
+export const SAMPLING_MODE_LABEL: Record<SamplingMode, string> = { text: "文章から描くとき", reference: "参照画像を使うとき" };
+
+/** 設定できる範囲(ComfyUI の KSampler が受け付ける範囲より狭くしている) */
+export const SAMPLING_LIMITS = { steps: { min: 1, max: 150 }, cfg: { min: 0, max: 30 } } as const;
+
+/** ステップ数が範囲内の整数か */
+export const validSteps = (v: unknown): v is number =>
+  typeof v === "number" && Number.isInteger(v) && v >= SAMPLING_LIMITS.steps.min && v <= SAMPLING_LIMITS.steps.max;
+
+/** CFG が範囲内の正の数か */
+export const validCfg = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > SAMPLING_LIMITS.cfg.min && v <= SAMPLING_LIMITS.cfg.max;
+
+const validName = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
+
+/** 設定の値で既定値を上書きする。おかしい値・空の項目は既定値のまま */
+export function resolveSampling(base: Sampling, own: SamplingParams | undefined): Sampling {
+  return {
+    steps: validSteps(own?.steps) ? own.steps : base.steps,
+    cfg: validCfg(own?.cfg) ? own.cfg : base.cfg,
+    sampler: validName(own?.sampler) ? own.sampler : base.sampler,
+    scheduler: validName(own?.scheduler) ? own.scheduler : base.scheduler,
+  };
+}
+
 export interface EngineDef {
   id: ImageEngine;
   label: string;
@@ -67,8 +93,10 @@ export interface EngineDef {
   negative: boolean;
   /** 実際に描く大きさ(仕上がりの大きさと違えば、最後に拡大・縮小する)。referencing は参照画像を使うとき */
   drawSize: (w: number, h: number, referencing?: boolean) => [number, number];
+  /** KSampler の既定値。reference があれば、参照画像を使うときはそちらを使う */
+  sampling: { text: Sampling; reference?: Sampling };
   /** 描く部分のワークフロー。描いた画像(仕上がりの大きさにする前)のノードを返す */
-  build: (g: Graph, m: ComfyModels, r: UploadedRequest, size: [number, number]) => Link;
+  build: (g: Graph, m: ComfyModels, r: UploadedRequest, size: [number, number], sp: Sampling) => Link;
 }
 
 const round = (v: number, step: number) => Math.round(v / step) * step;
@@ -92,7 +120,12 @@ const moss: EngineDef = {
     const k = Math.min(1, Math.sqrt((referencing ? 1_048_576 : 2_097_152) / (w * h)));
     return [round(w * k, 16), round(h * k, 16)];
   },
-  build: (g, m, r, [w, h]) => {
+  // 参照するときは公式の Image Edit のテンプレートの値
+  sampling: {
+    text: { steps: 25, cfg: 2.5, sampler: "er_sde", scheduler: "simple" },
+    reference: { steps: 30, cfg: 4, sampler: "euler", scheduler: "normal" },
+  },
+  build: (g, m, r, [w, h], sp) => {
     Object.assign(g, {
       unet: { class_type: "UNETLoader", inputs: { unet_name: m.unet, weight_dtype: "default" } },
       clip: { class_type: "CLIPLoader", inputs: { clip_name: m.clip, type: "moss_image", device: "default" } },
@@ -106,10 +139,10 @@ const moss: EngineDef = {
       inputs: {
         model: ["unet", 0],
         seed: r.seed,
-        steps: 25,
-        cfg: 2.5,
-        sampler_name: "er_sde",
-        scheduler: "simple",
+        steps: sp.steps,
+        cfg: sp.cfg,
+        sampler_name: sp.sampler,
+        scheduler: sp.scheduler,
         positive: ["positive", 0],
         negative: ["negative", 0],
         latent_image: ["latent", 0],
@@ -130,7 +163,7 @@ const moss: EngineDef = {
       });
       g.positive = encode(r.prompt);
       g.negative = encode(r.negative ?? DEFAULT_NEGATIVE);
-      Object.assign(g.sampler.inputs, { model: ["slg", 0], steps: 30, cfg: 4, sampler_name: "euler", scheduler: "normal" });
+      g.sampler.inputs.model = ["slg", 0];
     }
     g.decode = { class_type: "VAEDecode", inputs: { samples: ["sampler", 0], vae: ["vae", 0] } };
     return ["decode", 0];
@@ -154,7 +187,8 @@ const minimaxH3: EngineDef = {
     const k = Math.sqrt(4_194_304 / (w * h));
     return [Math.max(1024, round(w * k, 32)), Math.max(1024, round(h * k, 32))];
   },
-  build: (g, m, r, [w, h]) => {
+  sampling: { text: { steps: 6, cfg: 1, sampler: "euler", scheduler: "simple" } },
+  build: (g, m, r, [w, h], sp) => {
     g.unet = { class_type: "UNETLoader", inputs: { unet_name: m.unet, weight_dtype: "default" } };
     g.clip = { class_type: "CLIPLoader", inputs: { clip_name: m.clip, type: "minimax", device: "default" } };
     g.vae = { class_type: "VAELoader", inputs: { vae_name: m.vae } };
@@ -173,10 +207,10 @@ const minimaxH3: EngineDef = {
       inputs: {
         model: ["unet", 0],
         seed: r.seed,
-        steps: 6,
-        cfg: 1,
-        sampler_name: "euler",
-        scheduler: "simple",
+        steps: sp.steps,
+        cfg: sp.cfg,
+        sampler_name: sp.sampler,
+        scheduler: sp.scheduler,
         positive: ["positive", 0],
         negative: ["negative", 0],
         latent_image: r.redraw ? redrawLatent(g, r.redraw.name, w, h, r.redraw.boxes) : ["positive", 1],
@@ -191,3 +225,6 @@ const minimaxH3: EngineDef = {
 export const ENGINES: Record<ImageEngine, EngineDef> = { moss, minimax_h3: minimaxH3 };
 
 export const engineOf = (id: ImageEngine | undefined): EngineDef => ENGINES[id ?? "moss"] ?? moss;
+
+/** そのモデルで設定できる場面(参照画像で既定値が変わるモデルだけ2つ) */
+export const samplingModes = (def: EngineDef): SamplingMode[] => (def.sampling.reference ? ["text", "reference"] : ["text"]);
