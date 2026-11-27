@@ -65,6 +65,7 @@ refs/<参照画像の id>.<拡張子>
 | `sheet` | SheetOptions | シートの作り方(表情など) |
 | `revisions` | Revision[] | シートの版(古い順) |
 | `currentRevision` | string? | 採用中の版の id |
+| `figure` | Figure? | 3D の目安(身長・体型、人ではない登場人物の形と大きさ)。Euros 0.4 から。ないこともある |
 
 ### いまのシートの画像
 
@@ -110,6 +111,53 @@ Notos の CharacterSheet と同じ名前の項目は、同じ意味です。ど�
 |---|---|
 | `expressions` | 表情一覧に並べる表情。`{ "ja": 名前, "en": 生成に使う説明 }` の配列 |
 | `notHuman` | 人ではないキャラクター(ロボット・動物・物など) |
+
+### Figure(3D の目安)
+
+Boreas などが、3D の素体や形の目安を作るための数値です。Euros 0.4 で足しました。`figure` そのものも、中の項目も、すべて省略できます。シートの生成には使いません。
+
+- 数はすべて、0 より大きい有限の数です。単位は項目ごとに決まっています(人物の身長は cm、人ではない登場人物の大きさは m)。
+- 文章の説明(`appearance.height` / `appearance.body`)はそのまま残ります。数がないときは、文章から推定してください。
+- 読む側は、知らない `form` や欠けた項目を「ない」として扱ってください。Euros は読むときと保存するときに、範囲の外の数や、その `form` で使わない項目を捨てます。
+
+人物(`sheet.notHuman` が `false`)で使う項目:
+
+| 項目 | 型 | 説明 |
+|---|---|---|
+| `heightCm` | number? | 身長(cm、1000 まで) |
+| `build` | string? | 体型。`slim`(細身)/ `standard`(標準)/ `sturdy`(がっしり) |
+| `heads` | number? | 頭身(1〜12。例 `6.5`) |
+
+人ではない登場人物(`sheet.notHuman` が `true`)で使う項目:
+
+| 項目 | 型 | 説明 |
+|---|---|---|
+| `body.form` | string | 形の種類(下の表) |
+| `body.size` | object | 大きさ(m、1000 まで)。`form` ごとに使う項目が決まっている(下の表)。値のない項目は省く |
+| `body.arms` | boolean? | 腕があるか(`biped_monster` だけ。ないときは、あるとして扱う) |
+| `body.tail` | boolean? | 尾があるか(`quadruped` と `biped_monster` だけ。ないときは、ないとして扱う) |
+
+| `form` | 形 | `size` の項目 |
+|---|---|---|
+| `sphere` | 球 | `diameter`(直径) |
+| `blob` | 不定形(柔らかい塊) | `width`(左右)・`depth`(前後)・`height`(高さ) |
+| `quadruped` | 四足 | `length`(体長。鼻先から尻まで)・`height`(体高。地面から肩まで) |
+| `biped_monster` | 二足の怪物 | `height`(身長)・`width`(体の幅) |
+| `object` | 物(機械・動かない物) | `width`・`depth`・`height`(全体が収まる箱の大きさ) |
+
+```json
+"figure": { "heightCm": 150, "build": "slim", "heads": 6.5 }
+```
+
+```json
+"figure": { "body": { "form": "sphere", "size": { "diameter": 0.4 } } }
+```
+
+```json
+"figure": { "body": { "form": "blob", "size": { "width": 1.8, "depth": 1.8, "height": 1.2 } } }
+```
+
+`figure` はキャラクターに1つだけで、版(`revisions`)ごとには残りません。
 
 ### Revision
 
@@ -211,6 +259,19 @@ Euros 0.3 から、武器・盾・杖など手に持つ物を登録して、キ�
 | `description` | 見た目の説明。Appearance の `equipment` と同じ `{ ja, en }`(持ち方は書かない) |
 | `image` | 見本の画像(`refs/<id>.png` など)。ないこともある |
 | `source` | キャラクターのシートから登録したときの、元のキャラクターと版(`{ characterId, revisionId }`)。ないこともある |
+| `form` | 3D の目安の型(下の表)。Euros 0.4 から。ないこともある |
+| `size` | 寸法(cm、10000 まで)。`form` ごとに使う項目が決まっている(下の表)。値のない項目は省く。`form` がないときは `size` もない |
+
+`form` と `size` は、Boreas などが 3D の形の目安を作るための数です(バット = 先が太い棒、剣 = 刃 + 柄 など)。見た目は `description` と `image` で決めます。`category`(武器・盾など)とは別に選びます。読む側は、知らない `form` や欠けた項目を「ない」として扱ってください。Euros は読むときと保存するときに、範囲の外の数や、その `form` で使わない項目を捨てます。
+
+| `form` | 型 | 例 | `size` の項目 |
+|---|---|---|---|
+| `rod` | 棒 | バット・杖・槍 | `length`(全長)・`diameter`(握りの太さ)・`tipDiameter`(先の太さ。ないときは `diameter` と同じ) |
+| `blade` | 刃物(刃 + 柄) | 剣・刀・ナイフ | `length`(柄を含む全長)・`width`(刃の幅)・`thickness`(刃の厚さ)・`gripLength`(柄の長さ) |
+| `box` | 箱 | 鞄・本・箱 | `length`(長い辺)・`width`・`thickness` |
+| `cylinder` | 円柱 | 瓶・筒・懐中電灯 | `length`・`diameter` |
+| `plate` | 板 | 盾・板 | `length`(長い辺)・`width`・`thickness` |
+| `sphere` | 球 | 玉・ボール・水晶玉 | `diameter` |
 
 持たせたキャラクターには、装備品の id は残りません。キャラクターの `appearance.equipment` に説明が足されるか(複数なら日本語は「、」、英語は「; 」でつなぐ)、入れ替わります。見本の画像はキャラクターの `refs/` に写して、`use` が `"equipment"`、`label` が `装備品:<名前>` の参照画像になります。持ち替えるたびに新しい版ができるので、成長による装備品の移り変わりは `revisions` に残ります。
 
@@ -224,6 +285,15 @@ Euros 0.3 から、武器・盾・杖など手に持つ物を登録して、キ�
   "name": "鉄の剣",
   "category": "weapon",
   "description": { "ja": "刃の広い鉄の片手剣。柄に革を巻いている", "en": "a sturdy one-handed iron sword with a broad steel-gray blade and a leather-wrapped grip" },
-  "image": "refs/0a1b2c3d4e5f60718293.png"
+  "image": "refs/0a1b2c3d4e5f60718293.png",
+  "form": "blade",
+  "size": { "length": 90, "width": 5, "thickness": 0.6, "gripLength": 20 }
 }
+```
+
+棒の例(金属バット):
+
+```json
+"form": "rod",
+"size": { "length": 84, "diameter": 2.5, "tipDiameter": 6.5 }
 ```

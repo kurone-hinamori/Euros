@@ -5,6 +5,7 @@ import { EQUIPMENT_CATEGORIES, EQUIPMENT_CATEGORY_LABEL } from "../types";
 import { emptyAppearance, randomSeed, readReference } from "../lib/character";
 import { engineOf } from "../lib/comfy";
 import { createEquipment, setEquipmentImage } from "../lib/equipment";
+import { equipmentShapeText, normalizeEquipmentShape, withEquipmentShape } from "../lib/figure";
 import { translateFields } from "../lib/prompts";
 import { EQUIPMENT_IMAGE_SIZE, STYLE_PRESETS, equipmentImageNegative, equipmentImagePrompt } from "../lib/sheet";
 import { deleteEquipment, listEquipment, loadFile, saveEquipment } from "../lib/storage";
@@ -13,6 +14,7 @@ import { useImageJob } from "../lib/useImageJob";
 import { confirmLeave, useLeaveGuard } from "../lib/leaveGuard";
 import { AppearanceEditor, type EnSource, sourceOf, staleKeys } from "./AppearanceEditor";
 import { EquipmentPicker, EquipmentThumb } from "./EquipmentPicker";
+import { EquipmentShapeEditor, type EquipmentShape } from "./ShapeEditor";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -91,7 +93,7 @@ export function EquipmentList(props: { settings: Settings }) {
               <div className="meta">
                 <div className="name">{e.name}</div>
                 <div className="sub">
-                  {EQUIPMENT_CATEGORY_LABEL[e.category]} · {e.description.ja}
+                  {[EQUIPMENT_CATEGORY_LABEL[e.category], equipmentShapeText(e), e.description.ja].filter(Boolean).join(" · ")}
                 </div>
               </div>
             </button>
@@ -116,6 +118,8 @@ function EquipmentEditor(props: {
   const o = props.item;
   const [name, setName] = useState(o?.name ?? "");
   const [category, setCategory] = useState<EquipmentCategory>(o?.category ?? props.basedOn?.category ?? "weapon");
+  /** 3D の型と寸法(元にする装備品があれば引き継ぐ) */
+  const [shape, setShape] = useState<EquipmentShape>(() => normalizeEquipmentShape(o ?? props.basedOn ?? {}));
   const [appearance, setAppearance] = useState<Appearance>(() => ({ ...emptyAppearance(), equipment: o?.description ?? { ja: "", en: "" } }));
   const [from, setFrom] = useState<EnSource>(() => sourceOf(appearance));
   /** 入れ替えた画像(null は外した、undefined は変えていない) */
@@ -140,7 +144,8 @@ function EquipmentEditor(props: {
 
   const desc = appearance.equipment;
   const dirty =
-    image !== undefined || name !== (o?.name ?? "") || category !== (o?.category ?? category) || desc.ja !== (o?.description.ja ?? "") || desc.en !== (o?.description.en ?? "");
+    image !== undefined || name !== (o?.name ?? "") || category !== (o?.category ?? category) || desc.ja !== (o?.description.ja ?? "") || desc.en !== (o?.description.en ?? "") ||
+    JSON.stringify(normalizeEquipmentShape(shape)) !== JSON.stringify(normalizeEquipmentShape(o ?? props.basedOn ?? {}));
   useLeaveGuard(busy === "generate" ? "画像を作っています。画面を離れると中断します。" : dirty && busy !== "save" ? "保存していない装備品の変更があります。画面を離れると変更は消えます。" : null);
 
   const pngImage = (bytes: Uint8Array, ext: string, type = "image/png") => ({ bytes, ext, url: URL.createObjectURL(new Blob([bytes as BlobPart], { type })) });
@@ -228,9 +233,9 @@ function EquipmentEditor(props: {
     setBusy("save");
     try {
       if (!o) {
-        await createEquipment({ name, category, description: a.equipment, image: image ?? undefined });
+        await createEquipment({ name, category, description: a.equipment, image: image ?? undefined, shape });
       } else {
-        let next: Equipment = { ...o, name: name.trim() || o.name, category, description: a.equipment, updatedAt: new Date().toISOString() };
+        let next: Equipment = withEquipmentShape({ ...o, name: name.trim() || o.name, category, description: a.equipment, updatedAt: new Date().toISOString() }, shape);
         // 前の画像のファイルは残す(ほかで使っていないかを確かめずに消さない)
         if (image !== undefined) next = await setEquipmentImage(next, image);
         await saveEquipment(next);
@@ -330,6 +335,7 @@ function EquipmentEditor(props: {
               ))}
             </select>
           </label>
+          <EquipmentShapeEditor shape={shape} disabled={!!busy} onChange={setShape} />
           <AppearanceEditor
             keys={KEYS}
             appearance={appearance}

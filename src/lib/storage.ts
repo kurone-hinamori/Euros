@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Appearance, Character, CharacterSummary, Equipment, Outfit, Settings } from "../types";
 import { APPEARANCE_KEYS, DEFAULT_SETTINGS } from "../types";
+import { normalizeFigure, withEquipmentShape } from "./figure";
 
 export const listCharacters = () => invoke<CharacterSummary[]>("list_characters");
 /** 前の版にない外見の項目(v0.3.0 の装備品など)を、空で補う */
@@ -9,7 +10,12 @@ const fillAppearance = (a: Partial<Appearance> | undefined): Appearance =>
 
 export const loadCharacter = async (id: string) => {
   const c = await invoke<Character>("load_character", { id });
-  return { ...c, appearance: fillAppearance(c.appearance), revisions: c.revisions.map((r) => ({ ...r, appearance: fillAppearance(r.appearance) })) };
+  return {
+    ...c,
+    appearance: fillAppearance(c.appearance),
+    revisions: c.revisions.map((r) => ({ ...r, appearance: fillAppearance(r.appearance) })),
+    figure: normalizeFigure(c.figure),
+  };
 };
 export const saveCharacter = (character: Character) => invoke<void>("save_character", { character });
 /** ライブラリの .trash に移す */
@@ -28,7 +34,11 @@ export const saveOutfit = (outfit: Outfit) => invoke<void>("save_outfit", { outf
 /** ライブラリの .trash に移す */
 export const deleteOutfit = (id: string) => invoke<void>("delete_outfit", { id });
 
-export const listEquipment = () => invoke<Equipment[]>("list_equipment");
+/** 型と寸法(v0.4.0 で足した)は、おかしい値を落として読む */
+export const listEquipment = async () => {
+  const list = await invoke<Equipment[]>("list_equipment");
+  return list.map((e) => withEquipmentShape(e, e));
+};
 export const saveEquipment = (equipment: Equipment) => invoke<void>("save_equipment", { equipment });
 /** ライブラリの .trash に移す */
 export const deleteEquipment = (id: string) => invoke<void>("delete_equipment", { id });

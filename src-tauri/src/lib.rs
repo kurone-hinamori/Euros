@@ -534,7 +534,8 @@ mod tests {
         let dir = library.join("characters").join(id);
         fs::create_dir_all(dir.join("sheets")).unwrap();
         fs::create_dir_all(dir.join("refs")).unwrap();
-        let c = json!({ "schemaVersion": 1, "app": "Euros", "id": id, "profile": { "name": "しずく" }, "revisions": [{ "id": "r1", "image": "sheets/r1.png" }], "currentRevision": "r1" });
+        let c = json!({ "schemaVersion": 1, "app": "Euros", "id": id, "profile": { "name": "しずく" }, "revisions": [{ "id": "r1", "image": "sheets/r1.png" }], "currentRevision": "r1",
+            "figure": { "body": { "form": "sphere", "size": { "diameter": 0.4 } } } });
         fs::write(dir.join("character.json"), serde_json::to_string(&c).unwrap()).unwrap();
         fs::write(dir.join("sheets/r1.png"), [1u8, 2, 3]).unwrap();
         fs::write(dir.join("refs/a1.jpg"), [4u8, 5]).unwrap();
@@ -566,6 +567,8 @@ mod tests {
         let c: Value = serde_json::from_str(&fs::read_to_string(dst.join("characters/c2/character.json")).unwrap()).unwrap();
         assert_eq!(c["id"], "c2");
         assert_eq!(c["profile"]["name"], "しずく(コピー)");
+        // 3D の目安(v0.4.0 で足した項目)も、そのまま写る
+        assert_eq!(c["figure"]["body"]["size"]["diameter"], json!(0.4));
 
         // 置き換えると、元は .trash に移る
         fs::write(dir.join("sheets/r1.png"), [9u8]).unwrap();

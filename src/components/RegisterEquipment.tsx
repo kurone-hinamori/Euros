@@ -6,6 +6,7 @@ import { cropImage } from "../lib/outfits";
 import { translateFields } from "../lib/prompts";
 import { SHEET_REGIONS, detailParts } from "../lib/sheet";
 import { loadFile } from "../lib/storage";
+import { EquipmentShapeEditor, type EquipmentShape } from "./ShapeEditor";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -31,6 +32,7 @@ export function RegisterEquipment(props: { settings: Settings; ch: Character; re
   const first = a.equipment.ja.trim() ? a.equipment : a.accessories;
   const [name, setName] = useState(equipmentNameOf(ch.profile.name));
   const [category, setCategory] = useState<EquipmentCategory>("weapon");
+  const [shape, setShape] = useState<EquipmentShape>({});
   const [ja, setJa] = useState(first.ja);
   const [crop, setCrop] = useState(crops[0].key);
   const [png, setPng] = useState<Uint8Array | null>(null);
@@ -80,6 +82,7 @@ export function RegisterEquipment(props: { settings: Settings; ch: Character; re
         description: { ja: ja.trim(), en },
         image: png ? { bytes: png, ext: "png" } : undefined,
         source: { characterId: ch.id, revisionId: rev.id },
+        shape,
       });
       props.onDone(e.name);
     } catch (e) {
@@ -115,6 +118,7 @@ export function RegisterEquipment(props: { settings: Settings; ch: Character; re
             <span>説明</span>
             <textarea rows={2} disabled={saving} placeholder="例)刃の広い鉄の片手剣。柄に革を巻いている。" value={ja} onChange={(e) => setJa(e.target.value)} />
           </label>
+          <EquipmentShapeEditor shape={shape} disabled={saving} onChange={setShape} />
           <div className="field">
             <span>見本の画像</span>
             {crops.map((c) => (

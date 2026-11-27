@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Appearance, AppearanceKey, Box1000, Character, Equipment, Outfit, Profile, ReferenceImage, Revision, Settings, SheetOptions } from "../types";
+import type { Appearance, AppearanceKey, Box1000, Character, Equipment, Figure, Outfit, Profile, ReferenceImage, Revision, Settings, SheetOptions } from "../types";
 import { APPEARANCE_KEYS, APPEARANCE_LABEL } from "../types";
 import { type Candidate, type PendingReference, addRevision, randomSeed, storeReferences } from "../lib/character";
 import { engineOf } from "../lib/comfy";
@@ -7,6 +7,7 @@ import { outfitReference, wearOutfit, wearSummaryEn } from "../lib/outfits";
 import { type EquipMode, equip, equipSummaryEn, equipmentReference } from "../lib/equipment";
 import { applyInstruction, translateFields } from "../lib/prompts";
 import { expressionChanges, sheetNegative, sheetPrompt } from "../lib/sheet";
+import { figureText, normalizeFigure } from "../lib/figure";
 import { loadCharacter, loadFile, saveCharacter } from "../lib/storage";
 import { useFileUrl } from "../lib/useFileUrl";
 import { useImageJob } from "../lib/useImageJob";
@@ -19,6 +20,7 @@ import { ReferencePicker, USE_LABEL } from "./ReferencePicker";
 import { RegionSelector } from "./RegionSelector";
 import { SheetOptionsEditor } from "./SheetOptionsEditor";
 import { SheetViewer } from "./SheetViewer";
+import { FigureEditor } from "./ShapeEditor";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -58,6 +60,7 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
   const [profile, setProfile] = useState<Profile | null>(null);
   const [style, setStyle] = useState("");
   const [sheet, setSheet] = useState<SheetOptions | null>(null);
+  const [figure, setFigure] = useState<Figure>({});
   const [refs, setRefs] = useState<ReferenceImage[]>([]);
   const [newRefs, setNewRefs] = useState<PendingReference[]>([]);
   const [useRefs, setUseRefs] = useState(false);
@@ -88,6 +91,7 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
         setProfile(c.profile);
         setStyle(c.style);
         setSheet(c.sheet);
+        setFigure(c.figure ?? {});
         setRefs(c.references);
       })
       .catch((e) => setError(`読み込めませんでした:${message(e)}`));
@@ -329,7 +333,9 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
     setError("");
     try {
       const stored = await storeReferences(ch.id, newRefs);
-      const next: Character = { ...ch, updatedAt: new Date().toISOString(), profile, style, sheet, references: [...refs, ...stored] };
+      const { figure: _old, ...rest } = ch;
+      const fig = normalizeFigure(figure);
+      const next: Character = { ...rest, updatedAt: new Date().toISOString(), profile, style, sheet, references: [...refs, ...stored], ...(fig ? { figure: fig } : {}) };
       await saveCharacter(next);
       setCh(next);
       setRefs(next.references);
@@ -559,6 +565,16 @@ export function EditCharacter(props: { id: string; settings: Settings; onDone: (
               setSheet(sh);
             }}
           />
+        </div>
+      </details>
+
+      <details className="card">
+        <summary>
+          <h3 style={{ display: "inline" }}>3D の目安</h3>
+          <span className="muted"> — {figureText(normalizeFigure(figure), sheet.notHuman) || "未設定"}</span>
+        </summary>
+        <div style={{ marginTop: 12 }}>
+          <FigureEditor figure={figure} notHuman={sheet.notHuman} disabled={busy} onChange={setFigure} />
         </div>
       </details>
 
